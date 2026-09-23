@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+/* ── Design tokens ───────────────────────────────────────────────────────── */
+@theme {
+  --color-ink:        #1B2140;
+  --color-fog:        #EEF1F5;
+  --color-lamp:       #E8A23C;
+  --color-confidence: #5C8368;
+  --color-deadline:   #B14B3A;
+  --color-ink-60:     #6B728E;
+
+  --font-display: "Fraunces", serif;
+  --font-body:    "IBM Plex Sans", sans-serif;
+  --font-mono:    "IBM Plex Mono", monospace;
+}
+
+/* ── Base resets ─────────────────────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-family: var(--font-body);
+  background-color: var(--color-fog);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Scrollbar (subtle) ──────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-ink-60); border-radius: 3px; }
+

@@ -1,0 +1,68 @@
+import mongoose, { Schema } from "mongoose";
+
+// ── Plan Entry sub-document ──────────────────────────────────────────────────
+const planEntrySchema = new Schema(
+  {
+    date: {
+      type: Date,
+      required: true,
+    },
+    subjectId: {
+      type: Schema.Types.ObjectId,
+      ref: "Subject",
+      required: true,
+    },
+    subjectName: {
+      type: String, // denormalised for fast reads without populate
+    },
+    subjectColor: {
+      type: String,
+    },
+    topicId: {
+      type: Schema.Types.ObjectId,
+      required: true,
+    },
+    topicTitle: {
+      type: String, // denormalised
+    },
+    estimatedMinutes: {
+      type: Number,
+      required: true,
+    },
+    status: {
+      type: String,
+      enum: ["pending", "done", "missed"],
+      default: "pending",
+    },
+    // Priority score computed by the scoring engine (for AI Insights)
+    priorityScore: {
+      type: Number,
+    },
+  },
+  { _id: true }
+);
+
+// ── Study Plan document ──────────────────────────────────────────────────────
+const studyPlanSchema = new Schema(
+  {
+    userId: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+      index: true,
+    },
+    generatedAt: {
+      type: Date,
+      default: Date.now,
+    },
+    dailyHoursAvailable: {
+      type: Number,
+      required: true,
+    },
+    planEntries: [planEntrySchema],
+  },
+  { timestamps: true }
+);
+
+export const StudyPlan = mongoose.model("StudyPlan", studyPlanSchema);
+
