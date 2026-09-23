@@ -1,20 +1,21 @@
-import { useEffect, useState } from "react";
-import { CalendarDays, Zap } from "lucide-react";
+﻿import { useEffect, useState } from "react";
+import { CalendarDays, Zap, CheckCircle2, Clock, Youtube, Play, Sparkles } from "lucide-react";
 import api from "../lib/api";
 import EmptyState from "../components/EmptyState";
+import FocusPlayerModal from "../components/FocusPlayerModal";
 import type { PlanEntry } from "../types";
-
-const STATUS_STYLES: Record<string, string> = {
-  pending: "border-ink/10 bg-white",
-  done: "border-confidence/20 bg-confidence/5",
-  missed: "border-deadline/20 bg-deadline/5 opacity-60",
-};
 
 export default function StudyPlanPage() {
   const [entries, setEntries] = useState<PlanEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
+  const [focusModal, setFocusModal] = useState<{
+    open: boolean;
+    topicTitle: string;
+    subjectName: string;
+    entryId?: string;
+  }>({ open: false, topicTitle: "", subjectName: "" });
 
   const fetchPlan = async () => {
     try {
@@ -53,13 +54,24 @@ export default function StudyPlanPage() {
     );
     try {
       await api.patch(`/plan/entries/${entryId}`, { status });
-      // Refresh to get rescheduled entries
       await fetchPlan();
     } catch {
-      // revert optimistic update
       await fetchPlan();
     }
   };
+
+  if (loading) {
+    return (
+      <div className="p-6 md:p-10 w-full animate-pulse">
+        <div className="h-8 bg-white/5 rounded-xl w-48 mb-6" />
+        <div className="space-y-4">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="h-28 bg-white/5 rounded-2xl" />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   // Group entries by date
   const grouped = entries.reduce<Record<string, PlanEntry[]>>((acc, entry) => {
@@ -73,32 +85,38 @@ export default function StudyPlanPage() {
     (a, b) => new Date(a).getTime() - new Date(b).getTime()
   );
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="w-8 h-8 border-2 border-lamp border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
-
   return (
-    <div className="px-6 md:px-10 py-8 max-w-2xl pb-24 md:pb-8">
+    <div className="p-6 md:p-10 w-full pb-24 md:pb-12 text-white">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="font-display text-2xl text-ink font-semibold">Study Plan</h1>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <CalendarDays size={15} className="text-ink-60" />
+            <span className="text-xs font-mono text-ink-60 uppercase tracking-wider">
+              AI Scheduling Engine
+            </span>
+          </div>
+          <h1 className=" text-3xl text-white font-semibold">
+            Smart Study Schedule
+          </h1>
+          <p className=" text-xs text-ink-60 mt-0.5">
+            Auto-prioritized by exam urgency, low confidence scores, and daily study limits.
+          </p>
+        </div>
+
         <button
           onClick={generatePlan}
           disabled={generating}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-lamp text-ink font-body font-semibold text-sm disabled:opacity-60"
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#0A84FF] text-white text-xs font-semibold hover:opacity-88 active:scale-95 transition-all  disabled:opacity-50 cursor-pointer shrink-0"
         >
           <Zap size={14} />
-          {generating ? "Generating…" : "Regenerate"}
+          <span>{generating ? "Recalculating Plan…" : "Regenerate Plan"}</span>
         </button>
       </div>
 
       {error && (
-        <div className="mb-4 px-3 py-2.5 rounded-lg bg-deadline/10 border border-deadline/20">
-          <p className="text-xs text-deadline font-body">{error}</p>
+        <div className="mb-6 p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs">
+          {error}
         </div>
       )}
 
@@ -106,125 +124,184 @@ export default function StudyPlanPage() {
         <EmptyState
           icon={CalendarDays}
           message="No study plan generated yet"
-          subMessage="Generate a plan to see your week-by-week schedule here."
+          subMessage="Generate an AI plan to schedule your curriculum topics across the coming weeks."
           action={
             <button
               onClick={generatePlan}
               disabled={generating}
-              className="px-5 py-2.5 rounded-lg bg-lamp text-ink font-body font-semibold text-sm disabled:opacity-60"
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#0A84FF] text-white text-xs font-semibold hover:opacity-88 active:scale-95 transition-all  cursor-pointer"
             >
-              {generating ? "Generating…" : "Generate plan"}
+              <Sparkles size={14} />
+              <span>Generate My First Plan</span>
             </button>
           }
         />
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-8">
           {dateKeys.map((dateKey) => {
             const date = new Date(dateKey);
             const isToday = date.toDateString() === new Date().toDateString();
             const dayEntries = grouped[dateKey];
+            const totalMinutes = dayEntries.reduce((s, e) => s + e.estimatedMinutes, 0);
 
             return (
-              <div key={dateKey}>
-                {/* Day header */}
-                <div className="flex items-center gap-3 mb-3">
-                  <div
-                    className={`px-2.5 py-1 rounded-lg font-body text-xs font-semibold ${
-                      isToday
-                        ? "bg-lamp text-ink"
-                        : "bg-ink/8 text-ink-60"
-                    }`}
-                  >
-                    {isToday
-                      ? "Today"
-                      : date.toLocaleDateString("en-IN", {
-                          weekday: "short",
-                          day: "numeric",
-                          month: "short",
-                        })}
+              <div key={dateKey} className="space-y-3">
+                {/* Day Header */}
+                <div className="flex items-center justify-between pb-2 border-b border-white/8">
+                  <div className="flex items-center gap-3">
+                    <span
+                      className={`px-3 py-1 rounded-lg font-mono text-xs font-semibold ${
+                        isToday
+                          ? "bg-white text-zinc-950 font-bold shadow-sm"
+                          : "bg-white/5 text-ink-60"
+                      }`}
+                    >
+                      {isToday ? "Today" : date.toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}
+                    </span>
+                    <span className="text-xs text-ink-60">
+                      {date.toLocaleDateString("en-IN", { weekday: "long" })}
+                    </span>
                   </div>
-                  <div className="flex-1 h-px bg-ink/8" />
-                  <span className="font-mono text-xs text-ink-60">
-                    {dayEntries.reduce((s, e) => s + e.estimatedMinutes, 0)} min
+
+                  <span className="text-xs font-mono text-ink-60">
+                    {totalMinutes} min scheduled
                   </span>
                 </div>
 
-                {/* Day entries */}
-                <div className="space-y-2">
-                  {dayEntries.map((entry) => (
-                    <div
-                      key={entry._id}
-                      className={`flex items-center gap-3 p-3 rounded-xl border transition-colors ${
-                        STATUS_STYLES[entry.status]
-                      }`}
-                    >
-                      {/* Subject chip */}
-                      <span
-                        className="text-[11px] font-body font-medium px-1.5 py-0.5 rounded shrink-0"
-                        style={{
-                          backgroundColor: entry.subjectColor + "22",
-                          color: entry.subjectColor,
-                        }}
-                      >
-                        {entry.subjectName}
-                      </span>
+                {/* Day Entries List */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {dayEntries.map((entry) => {
+                    const isDone = entry.status === "done";
+                    const isMissed = entry.status === "missed";
+                    const youtubeSearchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(
+                      `${entry.subjectName} ${entry.topicTitle} tutorial`
+                    )}`;
 
-                      {/* Topic */}
-                      <span
-                        className={`flex-1 font-body text-sm ${
-                          entry.status === "done"
-                            ? "line-through text-ink-60"
-                            : entry.status === "missed"
-                            ? "text-ink-60"
-                            : "text-ink"
+                    return (
+                      <div
+                        key={entry._id}
+                        className={`p-4 rounded-2xl border transition-all flex flex-col justify-between ${
+                          isDone
+                            ? "bg-emerald-500/5 border-emerald-500/20 opacity-75"
+                            : isMissed
+                            ? "bg-rose-500/5 border-rose-500/20 opacity-70"
+                            : "bg-[#141414] border border-white/8 hover:border-white/15 shadow-lg"
                         }`}
                       >
-                        {entry.topicTitle}
-                      </span>
+                        <div>
+                          {/* Top Tag & Time */}
+                          <div className="flex items-center justify-between gap-2 mb-2">
+                            <span
+                              className="text-[10px] font-mono px-2 py-0.5 rounded-full border truncate"
+                              style={{
+                                borderColor: entry.subjectColor + "40",
+                                color: entry.subjectColor,
+                                backgroundColor: entry.subjectColor + "15",
+                              }}
+                            >
+                              {entry.subjectName}
+                            </span>
 
-                      {/* Time */}
-                      <span className="font-mono text-xs text-ink-60 shrink-0">
-                        {entry.estimatedMinutes}m
-                      </span>
+                            <div className="flex items-center gap-1 text-[11px] font-mono text-ink-60 shrink-0">
+                              <Clock size={11} />
+                              <span>{entry.estimatedMinutes}m</span>
+                            </div>
+                          </div>
 
-                      {/* Actions */}
-                      {entry.status === "pending" && (
-                        <div className="flex gap-1 shrink-0">
-                          <button
-                            onClick={() => updateStatus(entry._id, "done")}
-                            className="text-xs font-body text-confidence hover:underline"
+                          {/* Topic Title */}
+                          <p
+                            className={` text-sm font-medium mb-3 line-clamp-2 ${
+                              isDone ? "line-through text-ink-60" : "text-white"
+                            }`}
                           >
-                            Done
-                          </button>
-                          <span className="text-ink-60 text-xs">·</span>
-                          <button
-                            onClick={() => updateStatus(entry._id, "missed")}
-                            className="text-xs font-body text-deadline hover:underline"
-                          >
-                            Missed
-                          </button>
+                            {entry.topicTitle}
+                          </p>
                         </div>
-                      )}
 
-                      {entry.status === "done" && (
-                        <span className="text-confidence text-xs font-body shrink-0">
-                          ✓
-                        </span>
-                      )}
+                        {/* Actions Row */}
+                        <div className="pt-3 border-t border-white/5 flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            {/* Checkbox button */}
+                            <button
+                              onClick={() =>
+                                updateStatus(entry._id, isDone ? "pending" : "done")
+                              }
+                              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs transition-colors ${
+                                isDone
+                                  ? "bg-emerald-500 text-white font-medium"
+                                  : "bg-white/5 text-ink-60 hover:text-white hover:bg-white/10"
+                              }`}
+                            >
+                              <CheckCircle2 size={13} />
+                              <span>{isDone ? "Done" : "Mark done"}</span>
+                            </button>
 
-                      {entry.status === "missed" && (
-                        <span className="text-deadline text-xs font-body shrink-0">
-                          Rescheduled
-                        </span>
-                      )}
-                    </div>
-                  ))}
+                            {/* Missed tag or trigger */}
+                            {isMissed ? (
+                              <span className="text-[11px] font-mono text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded">
+                                Rescheduled
+                              </span>
+                            ) : !isDone ? (
+                              <button
+                                onClick={() => updateStatus(entry._id, "missed")}
+                                className="text-[11px] text-rose-400/80 hover:text-rose-400 px-1.5 py-0.5 rounded hover:bg-rose-500/10 transition-colors"
+                              >
+                                Missed
+                              </button>
+                            ) : null}
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            {/* YouTube Search Link */}
+                            <a
+                              href={youtubeSearchUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="p-1.5 rounded-lg text-red-400 hover:bg-red-500/10 transition-colors"
+                              title="Watch top YouTube tutorial"
+                            >
+                              <Youtube size={15} />
+                            </a>
+
+                            {/* Focus Launcher */}
+                            <button
+                              onClick={() =>
+                                setFocusModal({
+                                  open: true,
+                                  topicTitle: entry.topicTitle,
+                                  subjectName: entry.subjectName,
+                                  entryId: entry._id,
+                                })
+                              }
+                              className="p-1.5 rounded-lg text-ink-60 hover:text-white hover:bg-white/10 transition-colors"
+                              title="Start Focus Timer"
+                            >
+                              <Play size={14} fill="currentColor" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             );
           })}
         </div>
       )}
+
+      {/* Focus Player Modal */}
+      <FocusPlayerModal
+        isOpen={focusModal.open}
+        onClose={() => setFocusModal((prev) => ({ ...prev, open: false }))}
+        topicTitle={focusModal.topicTitle}
+        subjectName={focusModal.subjectName}
+        onComplete={() => {
+          if (focusModal.entryId) {
+            updateStatus(focusModal.entryId, "done");
+          }
+        }}
+      />
     </div>
   );
 }

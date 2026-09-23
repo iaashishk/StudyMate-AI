@@ -8,22 +8,57 @@ export interface User {
   createdAt?: string;
 }
 
+// ── Resource Vault (Documents, Video Playlists, Books, PDFs) ─────────────
+export type ResourceType = "drive" | "youtube" | "pdf" | "book" | "link";
+
+export interface Resource {
+  _id: string;
+  title: string;
+  type: ResourceType;
+  url: string;
+  createdAt?: string;
+}
+
+// ── Cloud Notes (Cloud-backed per user) ─────────────────────────────────────
+export interface SubjectNote {
+  _id: string;
+  title: string;
+  content: string;
+  linkUrl?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface GlobalNote extends SubjectNote {
+  subjectId: string;
+  subjectName: string;
+  subjectColor: string;
+  semesterOrTrack?: string;
+}
+
 // ── Subject & Topic ───────────────────────────────────────────────────────────
 export interface Topic {
   _id: string;
   title: string;
+  unitNumber?: number;
   confidenceScore: number; // 1–5
   estimatedMinutes: number;
   completed: boolean;
+  notes?: string;
+  resourceQuery?: string;
 }
 
 export interface Subject {
   _id: string;
   userId: string;
   name: string;
+  semesterOrTrack?: string; // e.g. "Semester 1", "Core Studies"
+  category?: "exam" | "course" | "tech_stack" | "certification";
   examDate: string; // ISO date string
   colorTag: string;
   topics: Topic[];
+  resources?: Resource[];
+  notes?: SubjectNote[];
   daysUntilExam?: number; // virtual from backend
   createdAt?: string;
   updatedAt?: string;
@@ -43,6 +78,7 @@ export interface PlanEntry {
   estimatedMinutes: number;
   status: EntryStatus;
   priorityScore?: number;
+  resourceQuery?: string;
 }
 
 export interface StudyPlan {
@@ -62,6 +98,7 @@ export interface SubjectStat {
   completedTopics: number;
   pendingMinutes: number;
   daysUntilExam: number;
+  semesterOrTrack?: string;
 }
 
 export interface HistoryPoint {
@@ -89,4 +126,3 @@ export interface ApiResponse<T = unknown> {
   message: string;
   data: T;
 }
-

@@ -12,6 +12,7 @@ import StudyPlanPage from "./pages/StudyPlanPage";
 import InsightsPage from "./pages/InsightsPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import SettingsPage from "./pages/SettingsPage";
+import NotesPage from "./pages/NotesPage";
 
 // Layout
 import AppLayout from "./components/AppLayout";
@@ -82,6 +83,7 @@ function App() {
               <Route path="/" element={<DashboardPage />} />
               <Route path="/subjects" element={<SubjectsPage />} />
               <Route path="/subjects/:id" element={<SubjectDetailPage />} />
+              <Route path="/notes" element={<NotesPage />} />
               <Route path="/plan" element={<StudyPlanPage />} />
               <Route path="/insights" element={<InsightsPage />} />
               <Route path="/analytics" element={<AnalyticsPage />} />

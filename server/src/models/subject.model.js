@@ -1,5 +1,50 @@
 import mongoose, { Schema } from "mongoose";
 
+// ── Resource sub-document (Drive PDFs, YouTube Playlists, Books, Links) ───────
+const resourceSchema = new Schema(
+  {
+    title: {
+      type: String,
+      required: [true, "Resource title is required"],
+      trim: true,
+    },
+    // Type of resource: "drive" (Google Drive), "youtube" (Playlist/Video), "pdf", "book", "link"
+    type: {
+      type: String,
+      enum: ["drive", "youtube", "pdf", "book", "link"],
+      default: "drive",
+    },
+    url: {
+      type: String,
+      required: [true, "Resource URL or path is required"],
+      trim: true,
+    },
+  },
+  { _id: true, timestamps: true }
+);
+
+// ── Cloud Note sub-document (stored in database per user, NOT localStorage) ─────
+const noteSchema = new Schema(
+  {
+    title: {
+      type: String,
+      required: [true, "Note title is required"],
+      trim: true,
+    },
+    content: {
+      type: String,
+      default: "",
+    },
+    // Optional external reference (e.g. Google Drive PDF or Notion link)
+    linkUrl: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+  },
+  { _id: true, timestamps: true }
+);
+
 // ── Topic sub-document ───────────────────────────────────────────────────────
 const topicSchema = new Schema(
   {
@@ -7,6 +52,10 @@ const topicSchema = new Schema(
       type: String,
       required: [true, "Topic title is required"],
       trim: true,
+    },
+    unitNumber: {
+      type: Number,
+      default: 1,
     },
     // User's self-rated confidence: 1 (very low) → 5 (mastered)
     confidenceScore: {
@@ -22,16 +71,25 @@ const topicSchema = new Schema(
       default: 30,
       min: 5,
     },
-    // Marked true when the student completes the topic
     completed: {
       type: Boolean,
       default: false,
+    },
+    // Optional quick topic note / scratchpad
+    notes: {
+      type: String,
+      default: "",
+    },
+    // Direct search query for auto-curated tutorial lookup
+    resourceQuery: {
+      type: String,
+      default: "",
     },
   },
   { _id: true }
 );
 
-// ── Subject document ─────────────────────────────────────────────────────────
+// ── Subject / Course Track document ──────────────────────────────────────────
 const subjectSchema = new Schema(
   {
     userId: {
@@ -42,24 +100,40 @@ const subjectSchema = new Schema(
     },
     name: {
       type: String,
-      required: [true, "Subject name is required"],
+      required: [true, "Subject/Course name is required"],
       trim: true,
+    },
+    // Grouping by Semester or Track, e.g. "Semester 1", "Core Curriculum", "Certification"
+    semesterOrTrack: {
+      type: String,
+      default: "Core Curriculum",
+      trim: true,
+    },
+    category: {
+      type: String,
+      enum: ["exam", "course", "tech_stack", "certification"],
+      default: "exam",
     },
     examDate: {
       type: Date,
-      required: [true, "Exam date is required"],
+      required: [true, "Exam or target completion date is required"],
     },
-    // Color used in charts to differentiate subjects
+    // Color used in charts and badges
     colorTag: {
       type: String,
-      default: "#5C8368",
+      default: "#6366F1",
     },
+    // Topics (Curriculum syllabus checklist)
     topics: [topicSchema],
+    // Resource Vault: Drive folders, video playlists, PDFs, Books
+    resources: [resourceSchema],
+    // Cloud Notes: Markdown notes stored directly in database
+    notes: [noteSchema],
   },
   { timestamps: true }
 );
 
-// ── Virtual: days until exam ─────────────────────────────────────────────────
+// ── Virtual: days until exam / target date ───────────────────────────────────
 subjectSchema.virtual("daysUntilExam").get(function () {
   const now = new Date();
   const diff = this.examDate - now;
@@ -70,4 +144,3 @@ subjectSchema.set("toJSON", { virtuals: true });
 subjectSchema.set("toObject", { virtuals: true });
 
 export const Subject = mongoose.model("Subject", subjectSchema);
-

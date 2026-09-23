@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Lightbulb } from "lucide-react";
+﻿import { useEffect, useState } from "react";
+import { Lightbulb, Brain, Cpu, CheckCircle } from "lucide-react";
 import api from "../lib/api";
 import EmptyState from "../components/EmptyState";
 
@@ -16,66 +16,120 @@ export default function InsightsPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="w-8 h-8 border-2 border-lamp border-t-transparent rounded-full animate-spin" />
+      <div className="p-6 md:p-10 w-full animate-pulse">
+        <div className="h-8 bg-white/5 rounded-xl w-48 mb-6" />
+        <div className="space-y-3">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="h-20 bg-white/5 rounded-2xl" />
+          ))}
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="px-6 md:px-10 py-8 max-w-2xl pb-24 md:pb-8">
-      <h1 className="font-display text-2xl text-ink font-semibold mb-2">
-        AI Insights
-      </h1>
-      <p className="font-body text-sm text-ink-60 mb-8">
-        Here's why your study plan looks the way it does — based on urgency,
-        confidence, and time remaining.
-      </p>
-
-      {insights.length === 0 ? (
-        <EmptyState
-          icon={Lightbulb}
-          message="No insights yet"
-          subMessage="Add subjects with topics and confidence ratings to get personalized insights."
-        />
-      ) : (
-        <div className="space-y-4">
-          {insights.map((insight, i) => (
-            <div
-              key={i}
-              className={`p-4 rounded-xl border-l-4 font-body text-sm ${
-                insight.startsWith("  ↳")
-                  ? "border-l-ink/20 bg-white ml-4 text-ink-60"
-                  : insight.includes("🔴")
-                  ? "border-l-deadline bg-deadline/5 text-ink"
-                  : insight.includes("🟡")
-                  ? "border-l-lamp bg-lamp/5 text-ink"
-                  : insight.includes("✅")
-                  ? "border-l-confidence bg-confidence/5 text-ink"
-                  : "border-l-confidence/50 bg-white text-ink"
-              }`}
-            >
-              {insight.replace("  ↳", "↳")}
-            </div>
-          ))}
+    <div className="p-6 md:p-10 w-full pb-24 md:pb-12 text-white">
+      {/* Top Header */}
+      <div className="mb-8">
+        <div className="flex items-center gap-2 mb-1">
+          <Brain size={16} className="text-amber-400" />
+          <span className="text-xs font-mono text-amber-400 uppercase tracking-wider">
+            Decision Explanations
+          </span>
         </div>
-      )}
-
-      <div className="mt-10 p-4 rounded-xl bg-ink/4 border border-ink/8">
-        <h3 className="font-display text-sm font-semibold text-ink mb-2">
-          How does the algorithm work?
-        </h3>
-        <p className="font-body text-xs text-ink-60 leading-relaxed">
-          Each topic gets a priority score:{" "}
-          <code className="font-mono text-ink bg-ink/8 px-1 rounded">
-            urgency × (6 − confidence) × topicWeight
-          </code>
-          . Urgency is inversely proportional to days until your exam. Confidence
-          is your self-rating — lower scores get more weight. TopicWeight reflects
-          the topic's share of total study time for that subject. Topics are
-          sorted by score and greedily assigned to calendar slots within your
-          daily hour limit.
+        <h1 className=" text-3xl font-semibold">
+          AI Schedule Insights
+        </h1>
+        <p className=" text-xs text-ink-60 mt-0.5">
+          Transparent, deterministic logic explaining why each topic is prioritized on your calendar.
         </p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        {/* Left Column: Insight Cards (8 Cols) */}
+        <div className="lg:col-span-8 space-y-4">
+          {insights.length === 0 ? (
+            <EmptyState
+              icon={Lightbulb}
+              message="No insights generated yet"
+              subMessage="Add subjects with syllabus topics and confidence ratings to generate your personalized AI prioritization breakdown."
+            />
+          ) : (
+            insights.map((insight, i) => {
+              const isChild = insight.startsWith("  ↳");
+              const isRed = insight.includes("🔴");
+              const isYellow = insight.includes("🟡");
+              const isGreen = insight.includes("✅");
+
+              return (
+                <div
+                  key={i}
+                  className={`p-4 rounded-2xl border transition-all ${
+                    isChild
+                      ? "bg-white/[0.02] border-white/5 ml-6 text-ink-60 font-mono text-xs"
+                      : isRed
+                      ? "bg-rose-500/10 border-rose-500/25 text-rose-200 text-sm"
+                      : isYellow
+                      ? "bg-amber-500/10 border-amber-500/25 text-amber-200 text-sm"
+                      : isGreen
+                      ? "bg-emerald-500/10 border-emerald-500/25 text-emerald-200 text-sm"
+                      : "bg-[#141414] border-white/10 text-white text-sm"
+                  }`}
+                >
+                  <p className="leading-relaxed">
+                    {insight.replace("  ↳", "↳ ")}
+                  </p>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Right Column: Algorithm Breakdown Panel (4 Cols) */}
+        <div className="lg:col-span-4">
+          <div className="bg-[#141414] border border-white/8 rounded-2xl p-6 shadow-xl sticky top-8 space-y-4">
+            <div className="flex items-center gap-2 text-[#0A84FF]">
+              <Cpu size={18} />
+              <h3 className=" text-sm font-semibold text-white">
+                How the Algorithm Works
+              </h3>
+            </div>
+
+            <p className="text-xs text-ink-60 leading-relaxed">
+              StudyMate AI uses an offline, explainable priority scoring formula for each pending topic:
+            </p>
+
+            <div className="p-3.5 rounded-xl bg-black/40 border border-white/10 font-mono text-xs text-[#0A84FF] leading-loose">
+              Priority = Urgency × (6 − Confidence) × TopicWeight
+            </div>
+
+            <ul className="text-xs text-ink-60 space-y-2 pt-2 border-t border-white/5">
+              <li className="flex items-start gap-2">
+                <span className="text-[#0A84FF] font-bold">1.</span>
+                <span>
+                  <strong className="text-white">Urgency:</strong> Inversely proportional to days remaining until your exam or target completion date. Closer exams receive exponentially higher weight.
+                </span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-[#0A84FF] font-bold">2.</span>
+                <span>
+                  <strong className="text-white">Confidence (1–5):</strong> Self-rated score. Rating 1 gives multiplier (6-1)=5, while rating 5 gives (6-5)=1. Weak areas are tackled first.
+                </span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-[#0A84FF] font-bold">3.</span>
+                <span>
+                  <strong className="text-white">Rescheduling:</strong> If a session is missed, it automatically shifts forward into the earliest open time slot without displacing completed work.
+                </span>
+              </li>
+            </ul>
+
+            <div className="pt-2 border-t border-white/5 flex items-center gap-2 text-[11px] text-emerald-400 font-mono">
+              <CheckCircle size={13} />
+              <span>100% Deterministic &amp; Zero API Latency</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

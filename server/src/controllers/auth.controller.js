@@ -24,7 +24,7 @@ export const signup = asyncHandler(async (req, res) => {
 
   const existing = await User.findOne({ email });
   if (existing) {
-    throw new ApiError(409, "An account with this email already exists");
+    throw new ApiError(409, "An account with this email address already exists. Please log in instead.");
   }
 
   const user = await User.create({ name, email, password });
@@ -57,12 +57,12 @@ export const login = asyncHandler(async (req, res) => {
 
   const user = await User.findOne({ email });
   if (!user) {
-    throw new ApiError(401, "Invalid email or password");
+    throw new ApiError(404, "No account found with this email. Please check your spelling or sign up.");
   }
 
   const isPasswordValid = await user.isPasswordCorrect(password);
   if (!isPasswordValid) {
-    throw new ApiError(401, "Invalid email or password");
+    throw new ApiError(401, "Incorrect password. Please verify and try again.");
   }
 
   const { accessToken, refreshToken } = await generateTokens(user);

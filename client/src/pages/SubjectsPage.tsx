@@ -1,8 +1,18 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { BookOpen, Plus, Trash2, ChevronRight, Calendar, Target } from "lucide-react";
+import {
+  BookOpen,
+  Plus,
+  Trash2,
+  ChevronRight,
+  Target,
+  Folder,
+  FileText,
+  Layers,
+} from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import api from "../lib/api";
+import { parseApiError } from "../lib/error-handler";
 import EmptyState from "../components/EmptyState";
 import Modal from "../components/Modal";
 import type { Subject } from "../types";
@@ -11,13 +21,13 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 
 const SUBJECT_COLORS = [
-  "#5C8368", "#E8A23C", "#4A7FA5", "#9B6B9E", "#B14B3A", "#7A8E5C",
-  "#2D6A4F", "#E07A5F", "#3D5A80",
+  "#3B82F6", "#10B981", "#F59E0B", "#F43F5E", "#06B6D4", "#64748B", "#EC4899",
 ];
 
 const schema = z.object({
-  name: z.string().min(1, "Subject name is required"),
-  examDate: z.string().min(1, "Exam date is required"),
+  name: z.string().min(1, "Subject/Course name is required"),
+  semesterOrTrack: z.string().min(1, "Semester or track is required"),
+  examDate: z.string().min(1, "Exam or target date is required"),
   colorTag: z.string(),
 });
 
@@ -28,6 +38,7 @@ export default function SubjectsPage() {
   const [loading, setLoading] = useState(true);
   const [addOpen, setAddOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [selectedTrack, setSelectedTrack] = useState<string>("all");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -40,7 +51,7 @@ export default function SubjectsPage() {
     formState: { errors },
   } = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: { colorTag: SUBJECT_COLORS[0] },
+    defaultValues: { colorTag: SUBJECT_COLORS[0], semesterOrTrack: "Core Curriculum" },
   });
 
   const selectedColor = watch("colorTag");
@@ -58,13 +69,10 @@ export default function SubjectsPage() {
     try {
       const res = await api.post("/subjects", data);
       setSubjects((prev) => [...prev, res.data.data.subject]);
-      reset({ colorTag: SUBJECT_COLORS[0] });
+      reset({ colorTag: SUBJECT_COLORS[0], semesterOrTrack: "Core Curriculum" });
       setAddOpen(false);
     } catch (err: unknown) {
-      setError(
-        (err as { response?: { data?: { message?: string } } })?.response?.data
-          ?.message || "Failed to create subject"
-      );
+      setError(parseApiError(err).message);
     } finally {
       setSaving(false);
     }
@@ -85,16 +93,22 @@ export default function SubjectsPage() {
     return Math.max(Math.ceil(diff / (1000 * 60 * 60 * 24)), 0);
   };
 
+  // Group by Semester / Track
+  const availableTracks = Array.from(
+    new Set(subjects.map((s) => s.semesterOrTrack || "Core Curriculum").filter(Boolean))
+  );
+
+  const filteredSubjects = subjects.filter(
+    (s) => selectedTrack === "all" || (s.semesterOrTrack || "Core Curriculum") === selectedTrack
+  );
+
   if (loading) {
     return (
-      <div className="px-6 md:px-10 py-8 max-w-2xl">
-        <div className="flex items-center justify-between mb-6">
-          <div className="h-7 w-28 bg-ink/8 rounded-lg animate-pulse" />
-          <div className="h-9 w-32 bg-ink/8 rounded-lg animate-pulse" />
-        </div>
-        <div className="space-y-3">
-          {[1,2,3].map(i => (
-            <div key={i} className="h-20 bg-ink/5 rounded-xl animate-pulse" />
+      <div className="p-6 md:p-10 w-full animate-pulse">
+        <div className="h-8 bg-white/5 rounded-xl w-48 mb-6" />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <div key={i} className="h-44 bg-white/5 rounded-2xl" />
           ))}
         </div>
       </div>
@@ -102,53 +116,96 @@ export default function SubjectsPage() {
   }
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="px-6 md:px-10 py-8 max-w-2xl pb-24 md:pb-8"
-    >
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-6 md:p-10 w-full pb-24 md:pb-12 text-white">
+      {/* ── Top Header ─────────────────────────────────────────────────── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
         <div>
-          <h1 className="font-display text-2xl text-ink font-semibold">Subjects</h1>
-          <p className="font-body text-xs text-ink-60 mt-0.5">
-            {subjects.length} subject{subjects.length !== 1 ? "s" : ""} tracked
+          <div className="flex items-center gap-2 mb-1">
+            <Layers size={15} className="text-[#0A84FF]" />
+            <span className="text-xs font-mono text-[#0A84FF] uppercase tracking-wider">
+              Course &amp; Curriculum Manager
+            </span>
+          </div>
+          <h1 className="text-3xl text-white font-semibold tracking-tight">
+            Subjects &amp; Learning Tracks
+          </h1>
+          <p className="text-xs text-ink-60 mt-0.5">
+            Organized for productivity: curriculum syllabus, video resources, study documents &amp; reference books.
           </p>
         </div>
+
         <button
           onClick={() => setAddOpen(true)}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-lamp text-ink font-body font-semibold text-sm hover:bg-lamp/90 active:scale-[0.98] transition-all shadow-sm"
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#0A84FF] text-white text-xs font-semibold hover:opacity-90 active:scale-95 transition-all  shrink-0 cursor-pointer"
         >
-          <Plus size={16} />
-          Add subject
+          <Plus size={15} />
+          <span>Add Course / Subject</span>
         </button>
       </div>
 
-      {/* Subject list */}
-      {subjects.length === 0 ? (
+      {/* ── Track Selector Tabs ────────────────────────────────────────── */}
+      <div className="flex items-center gap-2 mb-6 overflow-x-auto pb-2">
+        <button
+          onClick={() => setSelectedTrack("all")}
+          className={`px-3.5 py-1.5 rounded-xl text-xs transition-colors shrink-0 cursor-pointer ${
+            selectedTrack === "all"
+              ? "bg-primary text-white font-medium shadow-md "
+              : "bg-white/5 text-ink-60 hover:text-white hover:bg-white/10"
+          }`}
+        >
+          All Courses ({subjects.length})
+        </button>
+
+        {availableTracks.map((track) => {
+          const count = subjects.filter(
+            (s) => (s.semesterOrTrack || "Core Curriculum") === track
+          ).length;
+
+          return (
+            <button
+              key={track}
+              onClick={() => setSelectedTrack(track)}
+              className={`px-3.5 py-1.5 rounded-xl text-xs transition-colors shrink-0 flex items-center gap-1.5 cursor-pointer ${
+                selectedTrack === track
+                  ? "bg-primary text-white font-medium shadow-md "
+                  : "bg-white/5 text-ink-60 hover:text-white hover:bg-white/10"
+              }`}
+            >
+              <Folder size={12} />
+              <span>{track}</span>
+              <span className="text-[10px] opacity-60">({count})</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ── Subjects Grid (Full Width Responsive) ──────────────────────── */}
+      {filteredSubjects.length === 0 ? (
         <EmptyState
           icon={BookOpen}
-          message="No subjects yet"
-          subMessage="Add your first subject to start building a study plan."
+          message="No subjects found"
+          subMessage="Add your first course or semester subject (e.g. DATA STRUCTURE, DBMS, CLOUD COMPUTING)."
           action={
             <button
               onClick={() => setAddOpen(true)}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-lamp text-ink font-body font-semibold text-sm hover:bg-lamp/90"
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#0A84FF] text-white text-xs font-semibold hover:opacity-90 transition-all  cursor-pointer"
             >
               <Plus size={15} />
-              Add first subject
+              <span>Add First Subject</span>
             </button>
           }
         />
       ) : (
-        <AnimatePresence mode="popLayout">
-          <div className="space-y-3">
-            {subjects.map((s, idx) => {
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          <AnimatePresence mode="popLayout">
+            {filteredSubjects.map((s, idx) => {
               const days = daysUntil(s.examDate);
               const completedTopics = s.topics.filter((t) => t.completed).length;
-              const progressPct = s.topics.length > 0 ? Math.round((completedTopics / s.topics.length) * 100) : 0;
-              const isUrgent = days <= 3;
-              const isWarning = days <= 7 && !isUrgent;
+              const totalTopics = s.topics.length;
+              const progressPct =
+                totalTopics > 0 ? Math.round((completedTopics / totalTopics) * 100) : 0;
+              const resourceCount = s.resources?.length || 0;
+              const notesCount = s.notes?.length || 0;
 
               return (
                 <motion.div
@@ -157,118 +214,147 @@ export default function SubjectsPage() {
                   initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.95 }}
-                  transition={{ delay: idx * 0.05 }}
-                  className="group relative bg-white rounded-xl border border-ink/8 hover:border-ink/15 hover:shadow-md transition-all overflow-hidden"
+                  transition={{ delay: idx * 0.04 }}
+                  className="bg-[#141414] border border-white/8 hover:border-white/20 rounded-2xl p-5 flex flex-col justify-between transition-all group glow-card relative"
                 >
-                  {/* Color accent strip */}
-                  <div className="absolute left-0 top-0 bottom-0 w-1" style={{ backgroundColor: s.colorTag }} />
+                  {/* Color Accent Indicator */}
+                  <div
+                    className="absolute top-5 right-5 w-2.5 h-2.5 rounded-full ring-4 ring-white/5"
+                    style={{ backgroundColor: s.colorTag }}
+                  />
 
-                  <div className="flex items-center gap-4 p-4 pl-5">
-                    <div className="flex-1 min-w-0">
-                      <Link to={`/subjects/${s._id}`} className="hover:underline decoration-ink/20">
-                        <p className="font-body font-medium text-ink truncate">{s.name}</p>
-                      </Link>
-                      <div className="flex items-center gap-3 mt-1.5">
-                        <span className="flex items-center gap-1 font-body text-xs text-ink-60">
-                          <Target size={11} />
-                          {completedTopics}/{s.topics.length} topics
-                        </span>
-                        <span className="flex items-center gap-1 font-body text-xs text-ink-60">
-                          <Calendar size={11} />
-                          {new Date(s.examDate).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
-                        </span>
+                  <div>
+                    {/* Track Badge & Days Left */}
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-[10px] font-mono text-[#0A84FF] uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/[0.06] border border-primary/20">
+                        {s.semesterOrTrack || "Core Curriculum"}
+                      </span>
+                      <span className="text-[11px] font-mono text-ink-60">
+                        {days === 0 ? "Target today" : `${days}d target`}
+                      </span>
+                    </div>
+
+                    {/* Course Title */}
+                    <Link to={`/subjects/${s._id}`} className="group-hover:underline block">
+                      <h3 className="text-base font-semibold text-white truncate mb-1">
+                        {s.name}
+                      </h3>
+                    </Link>
+
+                    {/* Meta Tags: Topics, Resources, Notes */}
+                    <div className="flex items-center gap-3 text-xs text-ink-60 my-3 flex-wrap">
+                      <span className="flex items-center gap-1">
+                        <Target size={12} className="text-emerald-400" />
+                        {completedTopics}/{totalTopics} topics
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <Folder size={12} className="text-amber-400" />
+                        {resourceCount} vault items
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <FileText size={12} className="text-blue-400" />
+                        {notesCount} notes
+                      </span>
+                    </div>
+
+                    {/* Progress Bar */}
+                    <div className="mt-3">
+                      <div className="flex justify-between text-[10px] font-mono text-ink-60 mb-1">
+                        <span>Syllabus Mastery</span>
+                        <span className="text-white font-medium">{progressPct}%</span>
                       </div>
-
-                      {/* Progress bar */}
-                      <div className="mt-2.5 h-1.5 rounded-full bg-ink/8 overflow-hidden">
+                      <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
                         <motion.div
                           initial={{ width: 0 }}
                           animate={{ width: `${progressPct}%` }}
-                          transition={{ delay: 0.2 + idx * 0.05, duration: 0.6 }}
+                          transition={{ duration: 0.5 }}
                           className="h-full rounded-full"
                           style={{ backgroundColor: s.colorTag }}
                         />
                       </div>
                     </div>
+                  </div>
 
-                    {/* Days countdown */}
-                    <div className="flex flex-col items-center shrink-0">
-                      <span
-                        className={`font-mono text-2xl font-medium ${
-                          isUrgent ? "text-deadline" : isWarning ? "text-lamp" : "text-ink"
-                        }`}
-                      >
-                        {days}
-                      </span>
-                      <span className="font-body text-[10px] text-ink-60">
-                        {days === 1 ? "day left" : "days left"}
-                      </span>
-                    </div>
+                  {/* Card Footer: Open Hub Button & Delete */}
+                  <div className="mt-5 pt-3 border-t border-white/5 flex items-center justify-between">
+                    <Link
+                      to={`/subjects/${s._id}`}
+                      className="text-xs font-medium text-[#0A84FF] hover:underline flex items-center gap-1"
+                    >
+                      <span>Open Course Hub</span>
+                      <ChevronRight size={13} />
+                    </Link>
 
-                    {/* Actions */}
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                      <Link
-                        to={`/subjects/${s._id}`}
-                        className="p-2 text-ink-60 hover:text-ink hover:bg-ink/5 rounded-lg transition-colors"
-                        title="Open subject"
-                      >
-                        <ChevronRight size={16} />
-                      </Link>
-                      <button
-                        onClick={() => setDeleteId(s._id)}
-                        className="p-2 text-ink-60 hover:text-deadline hover:bg-deadline/5 rounded-lg transition-colors"
-                        title="Delete subject"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
+                    <button
+                      onClick={() => setDeleteId(s._id)}
+                      className="p-1.5 text-ink-60 hover:text-rose-400 rounded-lg hover:bg-rose-500/10 transition-colors"
+                      title="Delete subject"
+                    >
+                      <Trash2 size={14} />
+                    </button>
                   </div>
                 </motion.div>
               );
             })}
-          </div>
-        </AnimatePresence>
+          </AnimatePresence>
+        </div>
       )}
 
-      {/* Add Subject Modal */}
-      <Modal isOpen={addOpen} onClose={() => setAddOpen(false)} title="Add a new subject">
+      {/* ── Add Subject Modal ──────────────────────────────────────────── */}
+      <Modal isOpen={addOpen} onClose={() => setAddOpen(false)} title="Add Course / Subject">
         <form onSubmit={handleSubmit(createSubject)} className="space-y-4" noValidate>
           <div>
-            <label className="block font-body text-sm text-ink mb-1.5">Subject name</label>
+            <label className="block text-xs text-ink-60 mb-1.5">
+              Course / Subject Name
+            </label>
             <input
               {...register("name")}
-              placeholder="e.g. Operating Systems"
-              className="w-full px-3 py-2.5 rounded-xl border border-ink/15 bg-white font-body text-sm text-ink focus:outline-none focus:ring-2 focus:ring-lamp/50 placeholder:text-ink-60/50"
+              placeholder="e.g. Data Structures, Cloud Computing, Database Systems"
+              className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-white placeholder:text-ink-60/50 focus:outline-none focus:border-primary/50"
             />
             {errors.name && (
-              <p className="mt-1 text-xs text-deadline">{errors.name.message}</p>
+              <p className="mt-1 text-xs text-rose-400">{errors.name.message}</p>
             )}
           </div>
 
           <div>
-            <label className="block font-body text-sm text-ink mb-1.5">Exam date</label>
+            <label className="block text-xs text-ink-60 mb-1.5">
+              Semester or Learning Track
+            </label>
+            <input
+              {...register("semesterOrTrack")}
+              placeholder="e.g. Semester 1, Core Studies, Professional Track"
+              className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-white placeholder:text-ink-60/50 focus:outline-none focus:border-primary/50"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs text-ink-60 mb-1.5">
+              Exam or Target Completion Date
+            </label>
             <input
               type="date"
               {...register("examDate")}
               min={new Date().toISOString().split("T")[0]}
-              className="w-full px-3 py-2.5 rounded-xl border border-ink/15 bg-white font-body text-sm text-ink focus:outline-none focus:ring-2 focus:ring-lamp/50"
+              className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-white focus:outline-none focus:border-primary/50"
             />
             {errors.examDate && (
-              <p className="mt-1 text-xs text-deadline">{errors.examDate.message}</p>
+              <p className="mt-1 text-xs text-rose-400">{errors.examDate.message}</p>
             )}
           </div>
 
-          {/* Color picker */}
           <div>
-            <label className="block font-body text-sm text-ink mb-2">Color tag</label>
+            <label className="block text-xs text-ink-60 mb-2">Color Tag</label>
             <div className="flex gap-2 flex-wrap">
               {SUBJECT_COLORS.map((color) => (
                 <button
                   key={color}
                   type="button"
                   onClick={() => setValue("colorTag", color)}
-                  className={`w-8 h-8 rounded-full transition-all ${
-                    selectedColor === color ? "ring-2 ring-offset-2 ring-ink scale-110" : "hover:scale-105"
+                  className={`w-7 h-7 rounded-full transition-transform ${
+                    selectedColor === color
+                      ? "ring-2 ring-offset-2 ring-offset-[#11131F] ring-white scale-110"
+                      : "hover:scale-105"
                   }`}
                   style={{ backgroundColor: color }}
                 />
@@ -276,42 +362,42 @@ export default function SubjectsPage() {
             </div>
           </div>
 
-          {error && <p className="text-xs text-deadline">{error}</p>}
+          {error && <p className="text-xs text-rose-400">{error}</p>}
 
           <button
             type="submit"
             disabled={saving}
-            className="w-full py-2.5 rounded-xl bg-lamp text-ink font-body font-semibold text-sm disabled:opacity-60 hover:bg-lamp/90 active:scale-[0.98] transition-all"
+            className="w-full py-2.5 rounded-xl bg-[#0A84FF] text-white text-xs font-semibold hover:opacity-90 transition-all  disabled:opacity-50 cursor-pointer"
           >
-            {saving ? "Adding…" : "Add subject"}
+            {saving ? "Creating Course…" : "Create Course"}
           </button>
         </form>
       </Modal>
 
-      {/* Delete confirmation Modal */}
+      {/* ── Delete Confirmation Modal ──────────────────────────────────── */}
       <Modal
         isOpen={!!deleteId}
         onClose={() => setDeleteId(null)}
-        title="Delete subject?"
+        title="Delete this course?"
       >
-        <p className="font-body text-sm text-ink-60 mb-6">
-          This will permanently delete the subject and all its topics. This action cannot be undone.
+        <p className="text-xs text-ink-60 mb-6">
+          This will permanently delete the subject, its curriculum topics, and any attached cloud notes.
         </p>
-        <div className="flex gap-3">
+        <div className="flex gap-2">
           <button
             onClick={() => setDeleteId(null)}
-            className="flex-1 py-2.5 rounded-xl border border-ink/15 font-body text-sm text-ink-60 hover:bg-ink/5 transition-colors"
+            className="flex-1 py-2.5 rounded-xl border border-white/10 text-ink-60 text-xs font-semibold hover:bg-white/5"
           >
             Cancel
           </button>
           <button
             onClick={deleteSubject}
-            className="flex-1 py-2.5 rounded-xl bg-deadline text-white font-body font-semibold text-sm hover:bg-deadline/90 active:scale-[0.98] transition-all"
+            className="flex-1 py-2.5 rounded-xl bg-rose-500 text-white text-xs font-semibold hover:bg-rose-600"
           >
             Delete
           </button>
         </div>
       </Modal>
-    </motion.div>
+    </div>
   );
 }

@@ -14,6 +14,15 @@ export const validate = (req, _res, next) => {
     message: err.msg,
   }));
 
-  throw new ApiError(422, "Validation failed", extractedErrors);
+  const friendlyMessage = extractedErrors
+    .map((e) => e.message)
+    .filter(Boolean)
+    .join(". ");
+
+  throw new ApiError(
+    422,
+    friendlyMessage || "Please correct the highlighted fields and try again",
+    extractedErrors
+  );
 };
 

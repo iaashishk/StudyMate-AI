@@ -30,16 +30,74 @@ app.use("/api/subjects", subjectRouter);
 app.use("/api/plan", planRouter);
 app.use("/api/dashboard", dashboardRouter);
 
-// ── Health check ────────────────────────────────────────────────────────────
+// ── Health check & Root info ────────────────────────────────────────────────
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", app: "StudyMate AI", time: new Date().toISOString() });
 });
 
+app.get("/", (_req, res) => {
+  res.json({
+    status: "ok",
+    app: "StudyMate AI API",
+    message: "Server is online. Web app running at http://localhost:5173",
+    endpoints: {
+      health: "/api/health",
+      auth: "/api/auth",
+      subjects: "/api/subjects",
+      plan: "/api/plan",
+      dashboard: "/api/dashboard",
+    },
+  });
+});
+
 // ── Global error handler ─────────────────────────────────────────────────────
-app.use((err, _req, res, _next) => {
+app.use((err, req, res, _next) => {
+  console.error(`[${new Date().toISOString()}] ${req.method} ${req.url} - Error:`, err);
+
+  // MongoDB duplicate key error (code 11000)
+  if (err.code === 11000) {
+    const field = Object.keys(err.keyPattern || err.keyValue || {})[0] || "field";
+    const statusCode = 409;
+    const message =
+      field === "email"
+        ? "An account with this email address already exists. Please log in instead."
+        : `A record with this ${field} already exists.`;
+    return res.status(statusCode).json({
+      success: false,
+      statusCode,
+      message,
+      errors: [{ field, message }],
+    });
+  }
+
+  // Mongoose validation error
+  if (err.name === "ValidationError") {
+    const errors = Object.values(err.errors || {}).map((e) => ({
+      field: e.path,
+      message: e.message,
+    }));
+    const message = errors.map((e) => e.message).join(". ");
+    return res.status(422).json({
+      success: false,
+      statusCode: 422,
+      message: message || "Validation failed",
+      errors,
+    });
+  }
+
+  // JWT errors
+  if (err.name === "JsonWebTokenError" || err.name === "TokenExpiredError") {
+    return res.status(401).json({
+      success: false,
+      statusCode: 401,
+      message: "Session expired or invalid. Please log in again.",
+      errors: [],
+    });
+  }
+
   const statusCode = err.statusCode || 500;
   const message = err.message || "Internal Server Error";
-  res.status(statusCode).json({
+  return res.status(statusCode).json({
     success: false,
     statusCode,
     message,
