@@ -163,8 +163,8 @@ export default function AppLayout() {
       {/* ── Desktop Nav Rail ───────────────────────────────────────────── */}
       <nav className="hidden md:flex flex-col w-[72px] lg:w-[220px] min-h-screen bg-[#0F0F0F] border-r border-white/[0.07] shrink-0 py-6 px-3 lg:px-4 gap-1 sticky top-0 z-40">
         {/* Logo */}
-        <NavLink to="/" className="flex items-center gap-2.5 px-2 mb-8 group">
-          <LogoIcon size={32} className="group-hover:scale-105 transition-transform" />
+        <NavLink to="/" className="flex items-center justify-center lg:justify-start gap-2.5 px-1 lg:px-2 mb-8 group">
+          <LogoIcon size={34} className="group-hover:scale-105 transition-transform shrink-0" />
           <div className="hidden lg:block leading-tight">
             <div className="flex items-center">
               <span className="font-bold text-white text-base tracking-tight">
