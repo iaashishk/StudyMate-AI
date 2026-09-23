@@ -13,8 +13,13 @@ export const getSubjects = asyncHandler(async (req, res) => {
 export const createSubject = asyncHandler(async (req, res) => {
   const { name, examDate, colorTag, topics } = req.body;
 
-  if (new Date(examDate) <= new Date()) {
-    throw new ApiError(400, "Exam date must be in the future");
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const exam = new Date(examDate);
+  exam.setHours(0, 0, 0, 0);
+
+  if (exam < today) {
+    throw new ApiError(400, "Exam date cannot be in the past");
   }
 
   const subject = await Subject.create({
@@ -44,8 +49,15 @@ export const getSubjectById = asyncHandler(async (req, res) => {
 export const updateSubject = asyncHandler(async (req, res) => {
   const { name, examDate, colorTag } = req.body;
 
-  if (examDate && new Date(examDate) <= new Date()) {
-    throw new ApiError(400, "Exam date must be in the future");
+  if (examDate) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const exam = new Date(examDate);
+    exam.setHours(0, 0, 0, 0);
+
+    if (exam < today) {
+      throw new ApiError(400, "Exam date cannot be in the past");
+    }
   }
 
   const subject = await Subject.findOneAndUpdate(

@@ -67,9 +67,9 @@ export default function OnboardingPage() {
     setSaving(true);
     setError("");
     try {
-      for (const topic of topics) {
-        await api.post(`/subjects/${subjectId}/topics`, topic);
-      }
+      await Promise.all(
+        topics.map((topic) => api.post(`/subjects/${subjectId}/topics`, topic))
+      );
       setStep(2);
     } catch (err: unknown) {
       setError(

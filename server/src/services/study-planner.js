@@ -127,22 +127,24 @@ export function rescheduleMissedEntries(existingEntries, missedEntryIds, today, 
   const dailyMinutes = dailyHours * 60;
   const missedSet = new Set(missedEntryIds.map(String));
 
-  // Pull out the missed tasks; keep the rest
+  // Keep all entries; mark the specified ones as "missed" so calendar/history records it
+  const updatedExisting = existingEntries.map((e) => {
+    if (missedSet.has(String(e._id))) {
+      const obj = typeof e.toObject === "function" ? e.toObject() : { ...e };
+      obj.status = "missed";
+      return obj;
+    }
+    return e;
+  });
+
   const missedTasks = existingEntries.filter((e) => missedSet.has(String(e._id)));
-  const remaining = existingEntries.filter((e) => !missedSet.has(String(e._id)));
 
-  // Find the last scheduled day in remaining entries
-  const futurePending = remaining
-    .filter((e) => e.status === "pending" && new Date(e.date) >= today)
-    .sort((a, b) => new Date(b.date) - new Date(a.date));
-
-  // Calculate how many minutes are already used on each future day
+  // Calculate how many minutes are already used on each future day (both pending & done consume study time)
   const dayMinutesMap = {};
-  for (const entry of remaining) {
-    const dateKey = new Date(entry.date).toDateString();
-    if (!dayMinutesMap[dateKey]) dayMinutesMap[dateKey] = 0;
-    if (entry.status === "pending") {
-      dayMinutesMap[dateKey] += entry.estimatedMinutes;
+  for (const entry of updatedExisting) {
+    if (entry.status === "pending" || entry.status === "done") {
+      const dateKey = new Date(entry.date).toDateString();
+      dayMinutesMap[dateKey] = (dayMinutesMap[dateKey] || 0) + entry.estimatedMinutes;
     }
   }
 
@@ -153,7 +155,6 @@ export function rescheduleMissedEntries(existingEntries, missedEntryIds, today, 
 
   for (const task of missedTasks) {
     let taskRemaining = task.estimatedMinutes;
-    task.status = "pending"; // reset status
 
     while (taskRemaining > 0) {
       const dayKey = currentDay.toDateString();
@@ -183,7 +184,7 @@ export function rescheduleMissedEntries(existingEntries, missedEntryIds, today, 
     }
   }
 
-  return [...remaining, ...newEntries];
+  return [...updatedExisting, ...newEntries];
 }
 
 /**

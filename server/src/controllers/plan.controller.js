@@ -31,13 +31,22 @@ export const generatePlan = asyncHandler(async (req, res) => {
   // Run the scoring engine
   const planEntries = generateStudyPlan(subjects, new Date(), dailyHours);
 
+  // Preserve past recorded entries (from days before today) so history and streaks are retained
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const existingPlan = await StudyPlan.findOne({ userId: req.user._id });
+  const pastEntries = existingPlan
+    ? existingPlan.planEntries.filter((e) => new Date(e.date) < today)
+    : [];
+
   // Replace any existing plan for this user
   await StudyPlan.findOneAndDelete({ userId: req.user._id });
 
   const plan = await StudyPlan.create({
     userId: req.user._id,
     dailyHoursAvailable: dailyHours,
-    planEntries,
+    planEntries: [...pastEntries, ...planEntries],
   });
 
   return res

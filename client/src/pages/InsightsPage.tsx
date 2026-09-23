@@ -54,7 +54,6 @@ export default function InsightsPage() {
                   ? "border-l-confidence bg-confidence/5 text-ink"
                   : "border-l-confidence/50 bg-white text-ink"
               }`}
-              style={{ fontFamily: insight.startsWith("  ↳") ? undefined : undefined }}
             >
               {insight.replace("  ↳", "↳")}
             </div>
