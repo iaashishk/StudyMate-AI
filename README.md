@@ -32,17 +32,16 @@ StudyMate AI helps students manage multiple subjects and upcoming exams by gener
 ## Screenshots
 
 <p align="center">
-  <img src="./docs/screenshots/dashboard.png" width="800" alt="StudyMate AI Dashboard" />
+  <img src="./docs/screenshots/analytics.png" width="800" alt="StudyMate AI Progress Analytics" />
 </p>
 <p align="center">
-  <img src="./docs/screenshots/subjects.png" width="800" alt="Subjects & Topics" />
+  <img src="./docs/screenshots/ai-insights.png" width="800" alt="StudyMate AI Schedule Insights" />
 </p>
 <p align="center">
-  <img src="./docs/screenshots/study-plan.png" width="800" alt="Day-by-day Study Plan" />
+  <img src="./docs/screenshots/deployment.png" width="800" alt="StudyMate AI Production Deployment" />
 </p>
-<p align="center">
-  <img src="./docs/screenshots/analytics.png" width="800" alt="Analytics Dashboard" />
-</p>
+
+Try the [live StudyMate AI demo](https://study-mate-ai-wheat-seven.vercel.app/).
 
 ---
 
