@@ -2,7 +2,7 @@
 
 > A full-stack AI-powered study planner for students — built with React, Node.js, Express, MongoDB, and a custom scoring algorithm.
 
-**Live Demo:** [ https://study-mate-ai-wheat-seven.vercel.app/] (#) &nbsp;|&nbsp; **API:** [https://studymate-ai-me50.onrender.com](#)
+**Live Demo:** [https://study-mate-ai-wheat-seven.vercel.app/] (#) &nbsp;|&nbsp; **API:** [https://studymate-ai-me50.onrender.com](#)
 
 ![StudyMate AI](https://img.shields.io/badge/React-19-blue?logo=react) ![TypeScript](https://img.shields.io/badge/TypeScript-Strict-blue?logo=typescript) ![Node.js](https://img.shields.io/badge/Node.js-Express_5-green?logo=nodedotjs) ![MongoDB](https://img.shields.io/badge/MongoDB-Mongoose_9-green?logo=mongodb)
 
