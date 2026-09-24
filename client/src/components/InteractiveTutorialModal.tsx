@@ -2,11 +2,11 @@ import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import {
-  Layers,
-  Target,
-  FolderGit2,
-  FileText,
-  Zap,
+  Scan,
+  Brain,
+  Mountain,
+  HardDrive,
+  ShieldCheck,
   CheckCircle2,
   ChevronRight,
   ChevronLeft,
@@ -38,84 +38,86 @@ interface StepInfo {
 const TUTORIAL_STEPS: StepInfo[] = [
   {
     id: 1,
-    tag: "Getting Started",
-    title: "Learning Tracks & Course Hub",
-    subtitle: "Organize subjects by semester, tech stack, or certification",
+    tag: "Syllabus AI v2",
+    title: "Smart Syllabus Parser (OCR & PDF)",
+    subtitle: "Turn dense MCA, B.Tech, or university syllabi into structured units",
     description: [
-      "Group your studies cleanly into custom tracks (e.g. Semester 1, Full-Stack Track, Computer Science).",
-      "Assign unique color tags and set your exam or target completion dates.",
-      "The system monitors deadlines to keep your review schedule perfectly on track.",
+      "Upload any syllabus image, scanned photo, or multi-page PDF document directly.",
+      "Integrated OCR extracts Course Title, Semester, Units (I through IV), Sub-units, and Topics automatically.",
+      "Interactive Confidence Survey: before saving, rate your knowledge (1–5) so the AI knows exactly where you stand.",
     ],
-    tips: "Tip: You can filter your dashboard and notes by track at any time.",
-    icon: Layers,
-    accentColor: "#6366F1",
-    accentBg: "bg-indigo-500/10 border-indigo-500/20 text-indigo-400",
+    tips: "Tip: You can re-parse or sync syllabus text anytime from the course Curriculum tab.",
+    icon: Scan,
+    accentColor: "#0A84FF",
+    accentBg: "bg-blue-500/10 border-blue-500/20 text-blue-400",
     ctaText: "Explore Courses",
     ctaLink: "/subjects",
   },
   {
     id: 2,
-    tag: "Curriculum Checklist",
-    title: "Syllabus & Confidence Scoring",
-    subtitle: "Turn overwhelming syllabi into a clear, actionable checklist",
+    tag: "Pedagogical Engine",
+    title: "Cognitive AI Brain",
+    subtitle: "No random studying — structured curriculum progression",
     description: [
-      "Add course topics with estimated study times and unit numbers.",
-      "Rate your confidence from 1 (Needs practice) to 5 (Fully mastered).",
-      "StudyMate prioritizes topics where your confidence is lowest and target date is nearest.",
+      "Strict Unit-by-Unit Flow: Unit 1 foundational principles are scheduled before Unit 4 advanced topics.",
+      "Prerequisite Mastery: Prioritizes low-confidence topics first within each unit before stepping forward.",
+      "Transparent AI Rationales: Every generated agenda item explains WHY you are studying this topic today.",
     ],
-    tips: "Tip: Mark topics complete as you finish them to build up your mastery score.",
-    icon: Target,
-    accentColor: "#10B981",
-    accentBg: "bg-emerald-500/10 border-emerald-500/20 text-emerald-400",
+    tips: "Tip: In Study Plan, view the AI Rationale badge on each card to understand its pedagogical priority.",
+    icon: Brain,
+    accentColor: "#A855F7",
+    accentBg: "bg-purple-500/10 border-purple-500/20 text-purple-400",
+    ctaText: "View Study Plan",
+    ctaLink: "/plan",
   },
   {
     id: 3,
-    tag: "Vault",
-    title: "Multi-Media Resource Vault",
-    subtitle: "Keep playlists, drive docs, textbooks, and syllabus PDFs unified",
+    tag: "Alpine Gamification",
+    title: "Mountain Expedition Quest Roadmap",
+    subtitle: "Transform your syllabus into an epic alpine climb from Basecamp to Summit",
     description: [
-      "Attach cloud document links, video lecture series, and PDF notes directly to any course.",
-      "Click the YouTube icon next to any topic for instant 1-click video tutorials.",
-      "No more searching through bookmarks or scattered browser tabs.",
+      "Follow a scenic switchback mountain road with unit gates, waypoints, and milestone camps.",
+      "Live Elevation & Altitude Meter: watch your elevation rise toward 8,848m summit with weather indicators!",
+      "Earn +150 XP per topic, unlock Level ranks, and celebrate with summit confetti upon 100% completion.",
     ],
-    tips: "Tip: Use the Vault tab on any course page to centralize all reference materials.",
-    icon: FolderGit2,
+    tips: "Tip: Switch between List and Roadmap views anytime using the toggle on the Study Plan page.",
+    icon: Mountain,
+    accentColor: "#10B981",
+    accentBg: "bg-emerald-500/10 border-emerald-500/20 text-emerald-400",
+    ctaText: "Explore Roadmap",
+    ctaLink: "/plan",
+  },
+  {
+    id: 4,
+    tag: "Drive & Media Vault",
+    title: "Google Drive Sync & On-Site Reader",
+    subtitle: "Read Drive PDFs and watch YouTube tutorials without leaving the app",
+    description: [
+      "Link your Google Drive subject folder, textbook PDFs, and reference slide decks directly to your vault.",
+      "Built-in On-Site Reader: preview Drive notes and documents in-app so you never lose your focus.",
+      "Instant 1-Click YouTube button on every topic to pull up curated video lectures instantly.",
+    ],
+    tips: "Tip: Click 'View Doc' on any Drive resource or note link to read it immediately on-site.",
+    icon: HardDrive,
     accentColor: "#F59E0B",
     accentBg: "bg-amber-500/10 border-amber-500/20 text-amber-400",
   },
   {
-    id: 4,
-    tag: "Cloud Workspace",
-    title: "Centralized Study Notes",
-    subtitle: "Markdown summaries & formulas backed securely in the cloud",
-    description: [
-      "Create clean study notes, quick formulas, and chapter summaries.",
-      "Synced directly to your cloud account so your notes are accessible anywhere, on any device.",
-      "Attach external document links to any note for reference.",
-    ],
-    tips: "Tip: Access all notes across all subjects from the dedicated 'Study Notes' menu.",
-    icon: FileText,
-    accentColor: "#3B82F6",
-    accentBg: "bg-blue-500/10 border-blue-500/20 text-blue-400",
-    ctaText: "Open Notes Vault",
-    ctaLink: "/notes",
-  },
-  {
     id: 5,
-    tag: "Productivity Engine",
-    title: "Adaptive Schedule & Focus Mode",
-    subtitle: "Intelligent daily study queue and built-in Pomodoro player",
+    tag: "Security & Storage",
+    title: "Cloud Notes & Storage Management",
+    subtitle: "Safe deletion safeguards and lean database performance",
     description: [
-      "Click 'Generate AI Plan' to get a customized daily study schedule based on your available hours.",
-      "Launch the interactive Focus Session player for 15, 25, 45, or 60 minute Pomodoro intervals.",
-      "Use the built-in session scratchpad and direct video launcher during your study blocks.",
+      "Safe Removal Guards: Every delete action across Today, Schedule, Notes, and Curriculum requires explicit confirmation.",
+      "Plan Reset & Storage Optimization: Clear expired plans or reset schedules in 1-click to keep database space lean.",
+      "Rich Cloud Notes: Write markdown summaries with auto-detected Drive URLs and instant cloud backups.",
     ],
-    tips: "Tip: The circular Focus Ring on your Dashboard tracks your completion in real-time.",
-    icon: Zap,
+    tips: "Tip: Click 'Clear Plan' in Study Plan if you ever want to regenerate a brand new schedule from scratch.",
+    icon: ShieldCheck,
     accentColor: "#EC4899",
     accentBg: "bg-pink-500/10 border-pink-500/20 text-pink-400",
-    ctaText: "Go to Dashboard",
-    ctaLink: "/",
+    ctaText: "Open Notes Vault",
+    ctaLink: "/notes",
   },
 ];
 
@@ -209,7 +211,7 @@ export default function InteractiveTutorialModal({
               <LogoIcon size={32} />
               <div>
                 <h3 className="text-sm font-semibold text-white tracking-tight">
-                  StudyMate Interactive Tour
+                  StudyMate v2 Feature Guide
                 </h3>
                 <p className="text-[11px] font-mono text-ink-60">
                   Step {step.id} of {TUTORIAL_STEPS.length} — {step.tag}
@@ -234,9 +236,9 @@ export default function InteractiveTutorialModal({
                 onClick={() => setCurrentStep(idx)}
                 className={`h-1.5 flex-1 rounded-full transition-all duration-300 ${
                   idx === currentStep
-                    ? "bg-primary shadow-sm shadow-primary/50"
+                    ? "bg-[#0A84FF] shadow-sm shadow-[#0A84FF]/50"
                     : idx < currentStep
-                    ? "bg-primary/40"
+                    ? "bg-[#0A84FF]/40"
                     : "bg-white/10 hover:bg-white/20"
                 }`}
                 title={`Jump to ${s.title}`}
@@ -297,7 +299,7 @@ export default function InteractiveTutorialModal({
                         handleDismiss();
                         navigate(step.ctaLink!);
                       }}
-                      className="ml-3 shrink-0 text-primary hover:underline font-semibold flex items-center gap-1"
+                      className="ml-3 shrink-0 text-[#0A84FF] hover:underline font-semibold flex items-center gap-1"
                     >
                       <span>{step.ctaText}</span>
                       <ArrowRight size={11} />
@@ -316,7 +318,7 @@ export default function InteractiveTutorialModal({
                 type="checkbox"
                 checked={neverShowAgain}
                 onChange={(e) => setNeverShowAgain(e.target.checked)}
-                className="w-3.5 h-3.5 rounded bg-white/5 border-white/20 text-primary focus:ring-0"
+                className="w-3.5 h-3.5 rounded bg-white/5 border-white/20 text-[#0A84FF] focus:ring-0"
               />
               <span>Don't show automatically on start</span>
             </label>

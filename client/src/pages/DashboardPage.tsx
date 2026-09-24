@@ -15,8 +15,10 @@ import {
   Clock,
   Target,
   HelpCircle,
+  Trash2,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import { useConfirm } from "../context/ConfirmContext";
 import api from "../lib/api";
 import FocusRing from "../components/FocusRing";
 import EmptyState from "../components/EmptyState";
@@ -96,6 +98,27 @@ export default function DashboardPage() {
     }
   };
 
+  const { confirm } = useConfirm();
+
+  const handleRemoveEntry = async (entryId: string, topicTitle?: string) => {
+    const confirmed = await confirm({
+      title: "Remove from Agenda?",
+      message: `Are you sure you want to remove ${topicTitle ? `"${topicTitle}"` : "this task"} from Today's agenda?`,
+      confirmText: "Remove",
+      destructive: true,
+    });
+    if (!confirmed) return;
+
+    setTodayEntries((prev) => prev.filter((e) => e._id !== entryId));
+    try {
+      await api.delete(`/plan/entries/${entryId}`);
+      const summaryRes = await api.get("/dashboard/summary");
+      setSummary(summaryRes.data.data);
+    } catch {
+      await fetchData();
+    }
+  };
+
   const today = new Date();
   const greeting =
     today.getHours() < 12
@@ -109,6 +132,27 @@ export default function DashboardPage() {
     day: "numeric",
     month: "long",
   });
+
+  // Deduplicate Today's tasks by unique topic to prevent misleading duplicate progress
+  const uniqueTodayMap = new Map<string, PlanEntry>();
+  todayEntries.forEach((e) => {
+    const key = e.topicId || e.topicTitle;
+    if (!uniqueTodayMap.has(key) || e.status === "done") {
+      uniqueTodayMap.set(key, e);
+    }
+  });
+  const uniqueTodayList = Array.from(uniqueTodayMap.values());
+  const todayDone = uniqueTodayList.filter((e) => e.status === "done").length;
+  const todayTotal = uniqueTodayList.length;
+  const todayPct = todayTotal > 0 ? Math.round((todayDone / todayTotal) * 100) : 0;
+
+  // Group subjects by Semester / Learning Track
+  const groupedTracks = subjects.reduce<Record<string, Subject[]>>((acc, s) => {
+    const track = s.semesterOrTrack || "Core Curriculum";
+    if (!acc[track]) acc[track] = [];
+    acc[track].push(s);
+    return acc;
+  }, {});
 
   if (loading) {
     return (
@@ -127,18 +171,6 @@ export default function DashboardPage() {
       </div>
     );
   }
-
-  const todayDone = todayEntries.filter((e) => e.status === "done").length;
-  const todayTotal = todayEntries.length;
-  const todayPct = todayTotal > 0 ? Math.round((todayDone / todayTotal) * 100) : 0;
-
-  // Group subjects by Semester / Learning Track
-  const groupedTracks = subjects.reduce<Record<string, Subject[]>>((acc, s) => {
-    const track = s.semesterOrTrack || "Core Curriculum";
-    if (!acc[track]) acc[track] = [];
-    acc[track].push(s);
-    return acc;
-  }, {});
 
   return (
     <div className="p-6 md:p-10 w-full pb-24 md:pb-12 text-white">
@@ -268,7 +300,7 @@ export default function DashboardPage() {
               />
             ) : (
               <div className="space-y-3">
-                {todayEntries.map((entry) => {
+                {uniqueTodayList.map((entry) => {
                   const isDone = entry.status === "done";
                   const youtubeSearchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(
                     `${entry.subjectName} ${entry.topicTitle} tutorial`
@@ -289,7 +321,7 @@ export default function DashboardPage() {
                           onClick={() =>
                             handleEntryStatus(entry._id, isDone ? "pending" : "done")
                           }
-                          className={`w-5 h-5 rounded-lg border flex items-center justify-center shrink-0 transition-colors mt-0.5 sm:mt-0 ${
+                          className={`w-5 h-5 rounded-lg border flex items-center justify-center shrink-0 transition-colors mt-0.5 sm:mt-0 cursor-pointer ${
                             isDone
                               ? "bg-emerald-500 border-emerald-500 text-white"
                               : "border-white/20 hover:border-emerald-400"
@@ -325,7 +357,7 @@ export default function DashboardPage() {
                         </div>
                       </div>
 
-                      {/* Right: Actions (Watch Tutorial, Start Focus, Status) */}
+                      {/* Right: Actions (Watch Tutorial, Start Focus, Status, Remove) */}
                       <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
                         {/* YouTube Search Link */}
                         <a
@@ -349,7 +381,7 @@ export default function DashboardPage() {
                               entryId: entry._id,
                             })
                           }
-                          className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white/10 text-white hover:bg-white/20 border border-white/20 text-xs font-semibold transition-colors"
+                          className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white/10 text-white hover:bg-white/20 border border-white/20 text-xs font-semibold transition-colors cursor-pointer"
                           title="Open Pomodoro Focus Timer with scratchpad"
                         >
                           <Play size={12} fill="currentColor" />
@@ -360,12 +392,21 @@ export default function DashboardPage() {
                         {!isDone && (
                           <button
                             onClick={() => handleEntryStatus(entry._id, "missed")}
-                            className="px-2 py-1.5 text-xs font-body text-rose-400/80 hover:text-rose-400 transition-colors"
+                            className="px-2 py-1.5 text-xs font-body text-rose-400/80 hover:text-rose-400 transition-colors cursor-pointer"
                             title="Reschedule to next available day"
                           >
                             Missed
                           </button>
                         )}
+
+                        {/* Remove / Delete Task Button */}
+                        <button
+                          onClick={() => handleRemoveEntry(entry._id, entry.topicTitle)}
+                          className="p-1.5 text-ink-60 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-colors cursor-pointer"
+                          title="Remove task from plan"
+                        >
+                          <Trash2 size={13} />
+                        </button>
                       </div>
                     </div>
                   );

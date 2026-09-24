@@ -199,7 +199,7 @@ export default function SettingsPage() {
 
       {/* ── App Version Footer with subtle Bubu ── */}
       <div className="pt-10 pb-2 flex items-center justify-center gap-2 text-[11px] text-[#8E8E93]/40 select-none">
-        <span>StudyMate AI &bull; v1.0</span>
+        <span>StudyMate AI &bull; v2.0</span>
         <button
           onClick={() => {
             const count = (Number(sessionStorage.getItem("bubu_settings_clicks") || "0") + 1);

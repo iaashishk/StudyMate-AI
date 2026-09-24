@@ -3,12 +3,16 @@ import { body } from "express-validator";
 import {
   getSubjects,
   createSubject,
+  batchCreateSubjects,
   getSubjectById,
   updateSubject,
   deleteSubject,
   addTopic,
+  batchAddTopics,
+  parseSyllabus,
   updateTopic,
   deleteTopic,
+  clearAllTopics,
   addResource,
   deleteResource,
   addNote,
@@ -26,6 +30,25 @@ router.use(verifyJWT);
 
 // Centralized notes endpoint (must be before /:id)
 router.get("/notes/all", getAllNotes);
+
+// Parse syllabus text endpoint
+router.post(
+  "/parse-syllabus",
+  [body("text").trim().notEmpty().withMessage("Syllabus text is required")],
+  validate,
+  parseSyllabus
+);
+
+// Batch create subjects for an entire semester
+router.post(
+  "/batch",
+  [
+    body("subjects").isArray({ min: 1 }).withMessage("Subjects array is required"),
+    body("semesterOrTrack").trim().notEmpty().withMessage("Semester or track name is required"),
+  ],
+  validate,
+  batchCreateSubjects
+);
 
 router.get("/", getSubjects);
 
@@ -71,6 +94,16 @@ router.post(
   addTopic
 );
 
+// Batch add topics to curriculum (from parsed syllabus or multi-paste)
+router.post(
+  "/:id/topics/batch",
+  [
+    body("topics").isArray({ min: 1 }).withMessage("Topics array is required"),
+  ],
+  validate,
+  batchAddTopics
+);
+
 router.put(
   "/:id/topics/:topicId",
   [
@@ -88,6 +121,7 @@ router.put(
 );
 
 router.delete("/:id/topics/:topicId", deleteTopic);
+router.delete("/:id/topics", clearAllTopics);
 
 // Resource Vault sub-routes (Google Drive links, YouTube playlists, Books, PDFs)
 router.post(

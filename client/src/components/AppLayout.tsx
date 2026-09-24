@@ -111,8 +111,11 @@ export default function AppLayout() {
       <header className="md:hidden sticky top-0 z-40 bg-[#0F0F0F]/96 backdrop-blur-xl px-4 py-2.5 flex items-center justify-between border-b border-white/[0.07]">
         <NavLink to="/" className="flex items-center gap-2">
           <LogoIcon size={26} />
-          <span className="font-semibold text-white text-sm tracking-tight">
-            StudyMate <span className="text-[#8B5CF6]">AI</span>
+          <span className="font-semibold text-white text-sm tracking-tight flex items-center gap-1.5">
+            StudyMate <span className="text-[#0A84FF]">AI</span>
+            <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-[#0A84FF]/15 text-[#0A84FF] border border-[#0A84FF]/25">
+              v2
+            </span>
           </span>
         </NavLink>
 
@@ -170,12 +173,15 @@ export default function AppLayout() {
               <span className="font-bold text-white text-base tracking-tight">
                 StudyMate
               </span>
-              <span className="font-bold text-[#8B5CF6] text-base ml-1">
+              <span className="font-bold text-[#0A84FF] text-base ml-1">
                 AI
+              </span>
+              <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-[#0A84FF]/15 text-[#0A84FF] border border-[#0A84FF]/25 ml-1.5">
+                v2
               </span>
             </div>
             <p className="text-[10px] text-[#8E8E93] font-normal tracking-tight">
-              Your AI study partner
+              Adaptive Curriculum Engine
             </p>
           </div>
         </NavLink>

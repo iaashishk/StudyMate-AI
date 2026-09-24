@@ -12,9 +12,13 @@ app.use(express.json({ limit: "16kb" }));
 app.use(express.urlencoded({ extended: true, limit: "16kb" }));
 app.use(cookieParser());
 
-// ── CORS ────────────────────────────────────────────────────────────────────
 const allowedOrigins = [
   "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  "http://localhost:4173",
+  "http://127.0.0.1:4173",
   "https://study-mate-ai-wheat-seven.vercel.app",
   ...(process.env.CORS_ORIGIN || "")
     .split(",")
@@ -25,7 +29,11 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
+      if (
+        !origin ||
+        allowedOrigins.includes(origin) ||
+        /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
+      ) {
         return callback(null, true);
       }
       return callback(new Error("Origin is not allowed by CORS"));

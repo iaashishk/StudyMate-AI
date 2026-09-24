@@ -104,7 +104,7 @@ export default function LoginPage() {
         </div>
 
         <div className="relative z-10 pt-6 border-t border-white/5 flex items-center justify-between text-xs text-slate-500">
-          <span>v1.0 Production</span>
+          <span>v2.0 Production</span>
           <span>Aashish Kumar</span>
         </div>
       </div>

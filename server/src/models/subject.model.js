@@ -8,10 +8,10 @@ const resourceSchema = new Schema(
       required: [true, "Resource title is required"],
       trim: true,
     },
-    // Type of resource: "drive" (Google Drive), "youtube" (Playlist/Video), "pdf", "book", "link"
+    // Type of resource: "drive" (Google Drive), "youtube" (Video), "playlist" (YouTube Playlist), "pdf", "book", "link"
     type: {
       type: String,
-      enum: ["drive", "youtube", "pdf", "book", "link"],
+      enum: ["drive", "youtube", "playlist", "pdf", "book", "link"],
       default: "drive",
     },
     url: {
@@ -56,6 +56,11 @@ const topicSchema = new Schema(
     unitNumber: {
       type: Number,
       default: 1,
+    },
+    unitTitle: {
+      type: String,
+      default: "",
+      trim: true,
     },
     // User's self-rated confidence: 1 (very low) → 5 (mastered)
     confidenceScore: {
@@ -103,7 +108,13 @@ const subjectSchema = new Schema(
       required: [true, "Subject/Course name is required"],
       trim: true,
     },
-    // Grouping by Semester or Track, e.g. "Semester 1", "Core Curriculum", "Certification"
+    // Degree or Academic Program, e.g. "MCA", "B.Tech", "Job Prep"
+    degreeOrProgram: {
+      type: String,
+      default: "General",
+      trim: true,
+    },
+    // Grouping by Semester or Track, e.g. "MCA 1ST SEM", "Core Curriculum", "Certification"
     semesterOrTrack: {
       type: String,
       default: "Core Curriculum",
@@ -117,6 +128,17 @@ const subjectSchema = new Schema(
     examDate: {
       type: Date,
       required: [true, "Exam or target completion date is required"],
+    },
+    // Direct link to the student's Google Drive folder for this subject
+    driveFolderUrl: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    // Full raw syllabus text stored right inside the subject
+    rawSyllabusText: {
+      type: String,
+      default: "",
     },
     // Color used in charts and badges
     colorTag: {

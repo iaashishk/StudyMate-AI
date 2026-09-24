@@ -6,6 +6,8 @@ import {
   getWeekPlan,
   getFullPlan,
   updateEntry,
+  deleteEntry,
+  clearPlan,
   getInsights,
 } from "../controllers/plan.controller.js";
 import { verifyJWT } from "../middlewares/auth.middleware.js";
@@ -31,6 +33,9 @@ router.get("/today", getTodaysPlan);
 router.get("/week", getWeekPlan);
 router.get("/all", getFullPlan);
 router.get("/insights", getInsights);
+
+router.delete("/clear", clearPlan);
+router.delete("/entries/:entryId", deleteEntry);
 
 router.patch(
   "/entries/:entryId",

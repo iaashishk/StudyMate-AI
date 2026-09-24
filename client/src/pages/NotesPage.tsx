@@ -1,25 +1,52 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { FileText, Plus, ExternalLink, Trash2, Edit3, Save, Search, Calendar } from "lucide-react";
+import {
+  FileText,
+  Plus,
+  ExternalLink,
+  Trash2,
+  Edit3,
+  Save,
+  Search,
+  Calendar,
+  Folder,
+  Youtube,
+  Eye,
+  CheckCircle2,
+  Sparkles,
+} from "lucide-react";
 import api from "../lib/api";
 import { parseApiError } from "../lib/error-handler";
 import Modal from "../components/Modal";
 import EmptyState from "../components/EmptyState";
+import InlineDocViewerModal from "../components/InlineDocViewerModal";
 import { useToast } from "../context/ToastContext";
-import type { GlobalNote, Subject } from "../types";
+import { useConfirm } from "../context/ConfirmContext";
+import type { GlobalNote, Subject, ResourceType } from "../types";
 
 export default function NotesPage() {
   const { toast } = useToast();
+  const { confirm } = useConfirm();
   const [notes, setNotes] = useState<GlobalNote[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [selectedTrack, setSelectedTrack] = useState<string>("all");
-  
+
   // Note creation / editing state
   const [editNoteModal, setEditNoteModal] = useState(false);
-  const [activeNote, setActiveNote] = useState<Partial<GlobalNote> & { subjectId?: string } | null>(null);
+  const [activeNote, setActiveNote] = useState<
+    (Partial<GlobalNote> & { subjectId?: string }) | null
+  >(null);
   const [saving, setSaving] = useState(false);
+
+  // On-site Document Viewer Modal
+  const [viewerModal, setViewerModal] = useState<{
+    open: boolean;
+    title: string;
+    url: string;
+    type?: ResourceType;
+  }>({ open: false, title: "", url: "" });
 
   const fetchNotesAndSubjects = async () => {
     try {
@@ -27,8 +54,8 @@ export default function NotesPage() {
         api.get("/subjects/notes/all"),
         api.get("/subjects"),
       ]);
-      setNotes(notesRes.data.data.notes);
-      setSubjects(subjectsRes.data.data.subjects);
+      setNotes(notesRes.data.data.notes || []);
+      setSubjects(subjectsRes.data.data.subjects || []);
     } catch {
       toast({ title: "Failed to load notes", type: "error" });
     } finally {
@@ -57,6 +84,56 @@ export default function NotesPage() {
   const availableTracks = Array.from(
     new Set(notes.map((n) => n.semesterOrTrack || "General").filter(Boolean))
   );
+
+  // Smart URL parser for UI badges and on-site previewing
+  const getUrlMeta = (url: string) => {
+    if (!url) return null;
+    const isDrive = url.includes("drive.google.com") || url.includes("docs.google.com");
+    const isPdf = url.toLowerCase().endsWith(".pdf") || url.includes(".pdf?");
+    const isYoutube = url.includes("youtube.com") || url.includes("youtu.be");
+
+    let hostname = "";
+    try {
+      hostname = new URL(url).hostname.replace("www.", "");
+    } catch {
+      hostname = "Reference Link";
+    }
+
+    if (isDrive) {
+      return {
+        label: "Google Drive Doc",
+        badgeClass: "bg-amber-500/10 text-amber-300 border-amber-500/25 hover:bg-amber-500/20",
+        icon: Folder,
+        canPreview: true,
+        type: "drive" as const,
+      };
+    }
+    if (isPdf) {
+      return {
+        label: "PDF Document",
+        badgeClass: "bg-rose-500/10 text-rose-300 border-rose-500/25 hover:bg-rose-500/20",
+        icon: FileText,
+        canPreview: true,
+        type: "pdf" as const,
+      };
+    }
+    if (isYoutube) {
+      return {
+        label: "Lecture Video",
+        badgeClass: "bg-red-500/10 text-red-300 border-red-500/25 hover:bg-red-500/20",
+        icon: Youtube,
+        canPreview: true,
+        type: "youtube" as const,
+      };
+    }
+    return {
+      label: hostname,
+      badgeClass: "bg-white/5 text-[#0A84FF] border-white/10 hover:bg-white/10",
+      icon: ExternalLink,
+      canPreview: false,
+      type: "link" as const,
+    };
+  };
 
   const handleSaveNote = async () => {
     if (!activeNote?.title || !activeNote?.subjectId) {
@@ -92,7 +169,15 @@ export default function NotesPage() {
     }
   };
 
-  const handleDeleteNote = async (subjectId: string, noteId: string) => {
+  const handleDeleteNote = async (subjectId: string, noteId: string, noteTitle?: string) => {
+    const confirmed = await confirm({
+      title: "Delete Note?",
+      message: `Are you sure you want to delete note "${noteTitle || "this note"}"?`,
+      confirmText: "Delete",
+      destructive: true,
+    });
+    if (!confirmed) return;
+
     try {
       await api.delete(`/subjects/${subjectId}/notes/${noteId}`);
       toast({ title: "Note deleted", type: "info" });
@@ -108,7 +193,7 @@ export default function NotesPage() {
         <div className="h-8 bg-white/5 rounded-xl w-48 mb-6" />
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {[1, 2, 3, 4, 5, 6].map((i) => (
-            <div key={i} className="h-48 bg-white/5 rounded-2xl" />
+            <div key={i} className="h-44 bg-white/5 rounded-2xl" />
           ))}
         </div>
       </div>
@@ -116,63 +201,65 @@ export default function NotesPage() {
   }
 
   return (
-    <div className="p-6 md:p-10 w-full pb-24 md:pb-12">
-      {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+    <div className="p-6 md:p-10 w-full pb-24 md:pb-12 text-white">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="w-2.5 h-2.5 rounded-full bg-white" />
-            <span className="text-xs font-mono text-ink-60 uppercase tracking-wider">
-              Centralized Cloud Vault
+            <FileText size={15} className="text-[#0A84FF]" />
+            <span className="text-xs font-mono text-[#0A84FF] uppercase tracking-wider">
+              Central Academic Notes Hub
             </span>
           </div>
-          <h1 className=" text-3xl text-white font-semibold">
-            Study Notes &amp; Docs
+          <h1 className="text-3xl text-white font-semibold">
+            Cloud Notes &amp; Documents
           </h1>
-          <p className=" text-xs text-ink-60 mt-0.5">
-            Synchronized securely — access your syllabus, study materials &amp; notes anywhere.
+          <p className="text-xs text-ink-60 mt-0.5">
+            Store lecture cheat sheets, formulas, and attached Google Drive notes with on-site previewing.
           </p>
         </div>
 
-        <button
-          onClick={() => {
-            setActiveNote({
-              title: "",
-              content: "",
-              linkUrl: "",
-              subjectId: subjects[0]?._id || "",
-            });
-            setEditNoteModal(true);
-          }}
-          disabled={subjects.length === 0}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#0A84FF] text-white font-semibold text-xs hover:opacity-88 active:scale-95 transition-all  shrink-0 disabled:opacity-50 cursor-pointer"
-        >
-          <Plus size={15} />
-          <span>New Cloud Note</span>
-        </button>
+        {subjects.length > 0 && (
+          <button
+            onClick={() => {
+              setActiveNote({
+                title: "",
+                content: "",
+                linkUrl: "",
+                subjectId: subjects[0]?._id,
+              });
+              setEditNoteModal(true);
+            }}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#0A84FF] text-white text-xs font-semibold hover:opacity-88 active:scale-95 transition-all shadow-md shadow-[#0A84FF]/20 cursor-pointer shrink-0"
+          >
+            <Plus size={15} />
+            <span>New Cloud Note</span>
+          </button>
+        )}
       </div>
 
-      {/* Filter & Search Bar */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mb-6">
+      {/* Filter and Search Bar */}
+      <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between mb-6">
         {/* Search */}
         <div className="relative flex-1 max-w-md">
-          <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-60" />
+          <Search size={14} className="absolute left-3.5 top-3 text-ink-60" />
           <input
+            type="text"
+            placeholder="Search notes, topics, formulas..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search notes, topics, or subjects..."
-            className="w-full pl-9 pr-4 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-white placeholder:text-ink-60 focus:outline-none focus:border-primary/50 transition-colors"
+            className="w-full pl-9 pr-4 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-white placeholder-ink-60 focus:outline-none focus:border-[#0A84FF]"
           />
         </div>
 
-        {/* Track Filter Pills */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+        {/* Track Pills */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
           <button
             onClick={() => setSelectedTrack("all")}
-            className={`px-3 py-1.5 rounded-lg text-xs transition-colors shrink-0 cursor-pointer ${
+            className={`px-3 py-1.5 rounded-xl text-xs transition-colors shrink-0 cursor-pointer ${
               selectedTrack === "all"
-                ? "bg-[#0A84FF] text-white font-medium shadow-md "
-                : "bg-white/5 text-ink-60 hover:text-white hover:bg-white/10"
+                ? "bg-white/15 text-white font-medium"
+                : "bg-white/5 text-ink-60 hover:text-white"
             }`}
           >
             All Tracks ({notes.length})
@@ -181,10 +268,10 @@ export default function NotesPage() {
             <button
               key={t}
               onClick={() => setSelectedTrack(t)}
-              className={`px-3 py-1.5 rounded-lg text-xs transition-colors shrink-0 cursor-pointer ${
+              className={`px-3 py-1.5 rounded-xl text-xs transition-colors shrink-0 cursor-pointer ${
                 selectedTrack === t
-                  ? "bg-[#0A84FF] text-white font-medium shadow-md "
-                  : "bg-white/5 text-ink-60 hover:text-white hover:bg-white/10"
+                  ? "bg-[#0A84FF] text-white font-medium shadow-sm shadow-[#0A84FF]/25"
+                  : "bg-white/5 text-ink-60 hover:text-white"
               }`}
             >
               {t}
@@ -200,8 +287,8 @@ export default function NotesPage() {
           message="No notes found"
           subMessage={
             subjects.length === 0
-              ? "Add a subject first to attach curriculum notes and docs."
-              : "Create your first note or attach document links."
+              ? "Add a subject first to attach curriculum notes and documents."
+              : "Create your first note or attach Google Drive document links."
           }
           action={
             subjects.length > 0 ? (
@@ -215,7 +302,7 @@ export default function NotesPage() {
                   });
                   setEditNoteModal(true);
                 }}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#0A84FF] text-white text-xs font-semibold hover:opacity-88  cursor-pointer"
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#0A84FF] text-white text-xs font-semibold hover:opacity-88 cursor-pointer"
               >
                 <Plus size={15} />
                 <span>Create First Note</span>
@@ -226,86 +313,113 @@ export default function NotesPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <AnimatePresence mode="popLayout">
-            {filteredNotes.map((note) => (
-              <motion.div
-                key={note._id}
-                layout
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="bg-[#141414] border border-white/8 hover:border-white/15 rounded-2xl p-5 flex flex-col justify-between transition-all group glow-card relative"
-              >
-                <div>
-                  {/* Top Bar: Subject Badge & Actions */}
-                  <div className="flex items-center justify-between gap-2 mb-3">
-                    <div className="flex items-center gap-1.5 overflow-hidden">
-                      <span
-                        className="w-2 h-2 rounded-full shrink-0"
-                        style={{ backgroundColor: note.subjectColor }}
-                      />
-                      <span className="text-[11px] font-mono text-ink-60 uppercase truncate">
-                        {note.subjectName}
-                      </span>
+            {filteredNotes.map((note) => {
+              const urlMeta = note.linkUrl ? getUrlMeta(note.linkUrl) : null;
+              const Icon = urlMeta?.icon || FileText;
+
+              return (
+                <motion.div
+                  key={note._id}
+                  layout
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  className="bg-[#141414] border border-white/8 hover:border-white/15 rounded-2xl p-5 flex flex-col justify-between transition-all group relative shadow-lg"
+                >
+                  <div>
+                    {/* Top Bar: Subject Badge & Actions */}
+                    <div className="flex items-center justify-between gap-2 mb-3">
+                      <div className="flex items-center gap-1.5 overflow-hidden">
+                        <span
+                          className="w-2 h-2 rounded-full shrink-0"
+                          style={{ backgroundColor: note.subjectColor }}
+                        />
+                        <span className="text-[11px] font-mono text-ink-60 uppercase truncate">
+                          {note.subjectName}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => {
+                            setActiveNote({ ...note });
+                            setEditNoteModal(true);
+                          }}
+                          className="p-1.5 text-ink-60 hover:text-white rounded-lg hover:bg-white/5 transition-colors cursor-pointer"
+                          title="Edit note"
+                        >
+                          <Edit3 size={13} />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteNote(note.subjectId, note._id, note.title)}
+                          className="p-1.5 text-ink-60 hover:text-rose-400 rounded-lg hover:bg-rose-500/10 transition-colors cursor-pointer"
+                          title="Delete note"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
                     </div>
 
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button
-                        onClick={() => {
-                          setActiveNote({ ...note });
-                          setEditNoteModal(true);
-                        }}
-                        className="p-1 text-ink-60 hover:text-white rounded hover:bg-white/5 transition-colors"
-                        title="Edit note"
-                      >
-                        <Edit3 size={13} />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteNote(note.subjectId, note._id)}
-                        className="p-1 text-ink-60 hover:text-rose-400 rounded hover:bg-rose-500/10 transition-colors"
-                        title="Delete note"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                    </div>
+                    {/* Note Title */}
+                    <h3 className="text-sm font-semibold text-white mb-2 line-clamp-1">
+                      {note.title}
+                    </h3>
+
+                    {/* Content Preview */}
+                    <p className="text-xs text-ink-60 leading-relaxed line-clamp-4 whitespace-pre-line mb-3">
+                      {note.content || "No markdown text written. Document link attached below."}
+                    </p>
                   </div>
 
-                  {/* Note Title */}
-                  <h3 className=" text-sm font-semibold text-white mb-2 line-clamp-1">
-                    {note.title}
-                  </h3>
+                  {/* Enhanced Notes URL Link Row */}
+                  <div className="pt-3 border-t border-white/5 flex items-center justify-between gap-2">
+                    {note.linkUrl && urlMeta ? (
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        {urlMeta.canPreview ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setViewerModal({
+                                open: true,
+                                title: note.title,
+                                url: note.linkUrl!,
+                                type: urlMeta.type,
+                              })
+                            }
+                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-medium border transition-all cursor-pointer shadow-sm ${urlMeta.badgeClass}`}
+                            title="Preview file on-site without leaving"
+                          >
+                            <Icon size={12} />
+                            <span className="truncate max-w-[120px]">{urlMeta.label}</span>
+                            <Eye size={11} className="opacity-70 shrink-0" />
+                          </button>
+                        ) : null}
 
-                  {/* Content Preview */}
-                  <p className=" text-xs text-ink-60 leading-relaxed line-clamp-4 whitespace-pre-line">
-                    {note.content || "No text notes written yet. Click edit to add study summaries or formulas."}
-                  </p>
-                </div>
+                        <a
+                          href={note.linkUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="p-1.5 rounded-lg text-ink-60 hover:text-white hover:bg-white/5 transition-colors shrink-0"
+                          title={`Open ${urlMeta.label} in new tab`}
+                        >
+                          <ExternalLink size={12} />
+                        </a>
+                      </div>
+                    ) : (
+                      <span className="text-[11px] text-ink-60/50 font-mono">Cloud text note</span>
+                    )}
 
-                {/* Bottom Footer: External Link & Date */}
-                <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between text-[11px]">
-                  {note.linkUrl ? (
-                    <a
-                      href={note.linkUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex items-center gap-1 text-ink-60 hover:text-white hover:underline font-mono"
-                    >
-                      <ExternalLink size={12} />
-                      <span>Document / Reference</span>
-                    </a>
-                  ) : (
-                    <span className="text-ink-60/50 font-mono">Cloud text note</span>
-                  )}
-
-                  <span className="text-ink-60 text-[10px] flex items-center gap-1">
-                    <Calendar size={10} />
-                    {new Date(note.updatedAt || note.createdAt || "").toLocaleDateString("en-IN", {
-                      day: "numeric",
-                      month: "short",
-                    })}
-                  </span>
-                </div>
-              </motion.div>
-            ))}
+                    <span className="text-ink-60 text-[10px] font-mono flex items-center gap-1 shrink-0">
+                      <Calendar size={10} />
+                      {new Date(note.updatedAt || note.createdAt || "").toLocaleDateString("en-IN", {
+                        day: "numeric",
+                        month: "short",
+                      })}
+                    </span>
+                  </div>
+                </motion.div>
+              );
+            })}
           </AnimatePresence>
         </div>
       )}
@@ -327,11 +441,11 @@ export default function NotesPage() {
             <select
               value={activeNote?.subjectId || ""}
               onChange={(e) => setActiveNote((prev) => ({ ...prev, subjectId: e.target.value }))}
-              className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-white focus:outline-none focus:border-primary/50"
+              className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-white focus:outline-none focus:border-[#0A84FF]"
             >
               {subjects.map((s) => (
-                <option key={s._id} value={s._id} className="bg-[#141414] text-white">
-                  {s.semesterOrTrack ? `[${s.semesterOrTrack}] ` : ""}{s.name}
+                <option key={s._id} value={s._id} className="bg-[#1C1C1E] text-white">
+                  {s.name} ({s.semesterOrTrack || "Core"})
                 </option>
               ))}
             </select>
@@ -339,26 +453,48 @@ export default function NotesPage() {
 
           <div>
             <label className="block text-xs text-ink-60 mb-1.5">
-              Note Title (e.g. "Chapter Summary", "Key Concepts")
+              Note Title
             </label>
             <input
+              type="text"
               value={activeNote?.title || ""}
               onChange={(e) => setActiveNote((prev) => ({ ...prev, title: e.target.value }))}
-              placeholder="e.g. Core Algorithms &amp; System Concepts"
-              className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-white focus:outline-none focus:border-primary/50"
-            />
+              placeholder="e.g. Unit 2 B-Tree indexing summary & cheat sheet"
+              className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-white focus:outline-none focus:border-[#0A84FF]"
+            >
+            </input>
           </div>
 
+          {/* Enhanced URL / Document Link Input */}
           <div>
-            <label className="block text-xs text-ink-60 mb-1.5">
-              External Document / Reference Link (Optional)
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs text-ink-60">
+                Attached URL / Document Link (Google Drive, PDF, Notion)
+              </label>
+              <span className="text-[10px] font-mono text-[#0A84FF] flex items-center gap-1">
+                <Sparkles size={10} />
+                <span>On-Site Preview Supported</span>
+              </span>
+            </div>
             <input
+              type="url"
               value={activeNote?.linkUrl || ""}
               onChange={(e) => setActiveNote((prev) => ({ ...prev, linkUrl: e.target.value }))}
-              placeholder="https://..."
-              className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-white focus:outline-none focus:border-primary/50"
+              placeholder="https://drive.google.com/file/d/... or https://.../notes.pdf"
+              className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-white focus:outline-none focus:border-[#0A84FF]"
             />
+            {activeNote?.linkUrl && (
+              <div className="mt-2 flex items-center gap-1.5 text-[11px] text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
+                <CheckCircle2 size={12} />
+                <span>
+                  {activeNote.linkUrl.includes("drive.google.com")
+                    ? "⚡ Google Drive link detected: On-site reader will be active"
+                    : activeNote.linkUrl.endsWith(".pdf")
+                    ? "⚡ PDF document detected: Direct PDF reader active"
+                    : "⚡ Web link attached"}
+                </span>
+              </div>
+            )}
           </div>
 
           <div>
@@ -369,8 +505,8 @@ export default function NotesPage() {
               rows={6}
               value={activeNote?.content || ""}
               onChange={(e) => setActiveNote((prev) => ({ ...prev, content: e.target.value }))}
-              placeholder="Write formulas, algorithmic complexity, key interview questions..."
-              className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-white focus:outline-none focus:border-primary/50 resize-y"
+              placeholder="Write formulas, algorithmic complexity, key definitions, or exam reminders..."
+              className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-white focus:outline-none focus:border-[#0A84FF] resize-y"
             />
           </div>
 
@@ -380,14 +516,14 @@ export default function NotesPage() {
                 setEditNoteModal(false);
                 setActiveNote(null);
               }}
-              className="flex-1 py-2.5 rounded-xl border border-white/10 text-ink-60 hover:text-white text-xs font-semibold"
+              className="flex-1 py-2.5 rounded-xl border border-white/10 text-ink-60 hover:text-white text-xs font-semibold cursor-pointer"
             >
               Cancel
             </button>
             <button
               onClick={handleSaveNote}
               disabled={saving}
-              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-[#0A84FF] text-white text-xs font-semibold hover:opacity-88 transition-all  disabled:opacity-50 cursor-pointer"
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-[#0A84FF] text-white text-xs font-semibold hover:opacity-88 transition-all disabled:opacity-50 cursor-pointer shadow-md shadow-[#0A84FF]/25"
             >
               <Save size={14} />
               <span>{saving ? "Saving to Cloud…" : "Save Note"}</span>
@@ -395,7 +531,15 @@ export default function NotesPage() {
           </div>
         </div>
       </Modal>
+
+      {/* On-Site Document / PDF / Video Viewer Modal */}
+      <InlineDocViewerModal
+        isOpen={viewerModal.open}
+        onClose={() => setViewerModal((prev) => ({ ...prev, open: false }))}
+        title={viewerModal.title}
+        url={viewerModal.url}
+        type={viewerModal.type}
+      />
     </div>
   );
 }
-

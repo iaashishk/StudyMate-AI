@@ -25,6 +25,14 @@ const planEntrySchema = new Schema(
     topicTitle: {
       type: String, // denormalised
     },
+    unitNumber: {
+      type: Number,
+      default: 1,
+    },
+    unitTitle: {
+      type: String,
+      default: "",
+    },
     estimatedMinutes: {
       type: Number,
       required: true,
@@ -37,6 +45,20 @@ const planEntrySchema = new Schema(
     // Priority score computed by the scoring engine (for AI Insights)
     priorityScore: {
       type: Number,
+    },
+    // Pedagogical reasoning: why study this topic now
+    whyLogic: {
+      type: String,
+      default: "",
+    },
+    // Gamification properties for learning roadmap
+    orderIndex: {
+      type: Number,
+      default: 1,
+    },
+    xpReward: {
+      type: Number,
+      default: 50,
     },
   },
   { _id: true }

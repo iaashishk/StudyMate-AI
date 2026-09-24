@@ -175,6 +175,31 @@ export const getFullPlan = asyncHandler(async (req, res) => {
 
   return res
     .status(200)
-    .json(new ApiResponse(200, { plan }, "Full plan fetched"));
+    .json(new ApiResponse(200, { plan, entries: plan.planEntries }, "Full plan fetched"));
+});
+
+// ── DELETE /api/plan/entries/:entryId ─────────────────────────────────────────
+export const deleteEntry = asyncHandler(async (req, res) => {
+  const plan = await StudyPlan.findOne({ userId: req.user._id });
+  if (!plan) throw new ApiError(404, "No study plan found");
+
+  const entry = plan.planEntries.id(req.params.entryId);
+  if (!entry) throw new ApiError(404, "Plan entry not found");
+
+  plan.planEntries.pull({ _id: req.params.entryId });
+  await plan.save();
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, { plan, entries: plan.planEntries }, "Plan entry removed successfully"));
+});
+
+// ── DELETE /api/plan/clear ────────────────────────────────────────────────────
+export const clearPlan = asyncHandler(async (req, res) => {
+  await StudyPlan.findOneAndDelete({ userId: req.user._id });
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, null, "Study plan cleared and database space freed"));
 });
 

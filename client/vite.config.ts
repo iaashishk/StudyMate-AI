@@ -20,6 +20,7 @@ export default defineConfig({
     },
   },
   build: {
+    chunkSizeWarningLimit: 600,
     rollupOptions: {
       output: {
         manualChunks: {
@@ -27,6 +28,7 @@ export default defineConfig({
           "vendor-charts": ["recharts"],
           "vendor-motion": ["framer-motion"],
           "vendor-forms": ["react-hook-form", "@hookform/resolvers", "zod"],
+          "vendor-icons": ["lucide-react"],
         },
       },
     },

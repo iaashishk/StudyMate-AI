@@ -9,7 +9,7 @@ export interface User {
 }
 
 // ── Resource Vault (Documents, Video Playlists, Books, PDFs) ─────────────
-export type ResourceType = "drive" | "youtube" | "pdf" | "book" | "link";
+export type ResourceType = "drive" | "youtube" | "playlist" | "pdf" | "book" | "link";
 
 export interface Resource {
   _id: string;
@@ -41,6 +41,7 @@ export interface Topic {
   _id: string;
   title: string;
   unitNumber?: number;
+  unitTitle?: string;
   confidenceScore: number; // 1–5
   estimatedMinutes: number;
   completed: boolean;
@@ -52,16 +53,34 @@ export interface Subject {
   _id: string;
   userId: string;
   name: string;
-  semesterOrTrack?: string; // e.g. "Semester 1", "Core Studies"
+  degreeOrProgram?: string; // e.g. "MCA", "B.Tech", "Job Prep"
+  semesterOrTrack?: string; // e.g. "MCA 1ST SEM", "Core Studies"
   category?: "exam" | "course" | "tech_stack" | "certification";
   examDate: string; // ISO date string
   colorTag: string;
+  driveFolderUrl?: string; // Direct link to student's Google Drive folder
+  rawSyllabusText?: string; // Stored raw syllabus document on website
   topics: Topic[];
   resources?: Resource[];
   notes?: SubjectNote[];
   daysUntilExam?: number; // virtual from backend
   createdAt?: string;
   updatedAt?: string;
+}
+
+export interface ParsedUnitTopic {
+  title: string;
+  unitNumber: number;
+  unitTitle?: string;
+  confidenceScore: number;
+  estimatedMinutes: number;
+  completed: boolean;
+}
+
+export interface ParsedUnit {
+  unitNumber: number;
+  unitTitle: string;
+  topics: ParsedUnitTopic[];
 }
 
 // ── Study Plan ────────────────────────────────────────────────────────────────
@@ -75,9 +94,14 @@ export interface PlanEntry {
   subjectColor: string;
   topicId: string;
   topicTitle: string;
+  unitNumber?: number;
+  unitTitle?: string;
   estimatedMinutes: number;
   status: EntryStatus;
   priorityScore?: number;
+  whyLogic?: string;
+  orderIndex?: number;
+  xpReward?: number;
   resourceQuery?: string;
 }
 
