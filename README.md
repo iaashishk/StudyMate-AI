@@ -8,53 +8,40 @@
 
 ---
 
-## What is StudyMate AI?
+## What It Does
 
-StudyMate AI transforms dense, overwhelming university syllabi (MCA, B.Tech, BCA, CS) into an actionable, structured daily study roadmap. Instead of random topic cramming, StudyMate uses cognitive learning sequencing: mastering foundation units and low-confidence topics first, paced intelligently toward exam deadlines.
+StudyMate AI helps students manage multiple subjects and upcoming exams by generating a personalised, day-by-day study schedule — automatically prioritising the topics you're least confident about and the exams closest to you.
+
+### Key Features
+
+- 🔐 **JWT Authentication** — signup, login, secure token refresh with HTTP-only cookies
+- 📚 **Subject & Topic Tracker** — add subjects with exam dates, topics with confidence ratings (1–5) and estimated time
+- 🤖 **AI Scoring Algorithm** — generates a prioritised study plan using:
+  ```
+  Priority Score = urgency × (6 − confidence) × topicWeight
+  ```
+  where urgency = 1 / days until exam
+- 📅 **Day-by-day Plan View** — mark tasks done or missed; missed tasks auto-reschedule
+- 📊 **Analytics Dashboard** — completion %, streak tracker, 14-day history chart, subject time breakdown
+- 💡 **AI Insights** — plain-language explanation of why each topic is prioritised
+- 🎨 **Polished UI** — Framer Motion animations, split-screen auth, skeleton loading, toast notifications
+- 📱 **Responsive** — mobile-first with bottom tab navigation, works on 360px screens
 
 ---
 
-## What's New in v2.0 🚀
+## Screenshots
 
-### 1. ⚡ Smart Syllabus Parser (OCR & Multi-Page PDF Extraction)
-- **Document & Image Extraction**: Upload syllabus photos, scanned documents, or multi-page PDF files.
-- **Smart Unit Breakdown**: Automatic heuristic and OCR parser detects Course Titles, Semesters, Units (I through IV), Sub-units, and Topics.
-- **Interactive Confidence Survey**: Rate your knowledge (1 to 5 stars) and estimated study duration before saving into your curriculum checklist.
+<p align="center">
+  <img src="./docs/screenshots/analytics.png" width="800" alt="StudyMate AI Progress Analytics" />
+</p>
+<p align="center">
+  <img src="./docs/screenshots/ai-insights.png" width="800" alt="StudyMate AI Schedule Insights" />
+</p>
+<p align="center">
+  <img src="./docs/screenshots/deployment.png" width="800" alt="StudyMate AI Production Deployment" />
+</p>
 
-### 2. 🧠 Pedagogical Cognitive AI Brain
-- **Prerequisite-Aware Sequencing**: Enforces strict unit progression (Unit 1 foundation principles are scheduled before Unit 4 advanced topics).
-- **Adaptive Prioritization**: Low-confidence topics within the active unit are prioritized first before advancing.
-- **Explainable AI Rationales**: Every agenda item provides a transparent pedagogical reason explaining *why* it was scheduled today.
-
-### 3. 🗺️ Mountain Expedition Quest Roadmap (Gamified Trail)
-- **Scenic Switchback Road**: Transforms your curriculum into an alpine ascent with unit gates, milestones, and waypoints.
-- **Live Elevation & Altitude Meter**: Watch your climb from **Basecamp (0m)** to the **Summit (8,848m)** with real-time gradient and weather badges.
-- **Gamification Rewards**: Earn **+150 XP** per completed topic, level up your rank, and celebrate with summit confetti upon 100% mastery.
-
-### 4. 📁 Hierarchical Academic Folder Explorer
-- **Clean Academic Hierarchy**: 
-  ```
-  🎓 Academic Program (e.g. MCA, B.Tech)
-     └── 📁 Semester / Term (e.g. MCA 1ST SEM)
-           └── 📘 Course / Subject (e.g. DBMS, Cloud Computing)
-                 └── 📑 Unit Accordions (Collapsible Unit 1–4 with checkmarks, confidence & minutes)
-                 └── 📂 Resource Vault (Google Drive PDFs, YouTube playlists)
-                 └── 📝 Cloud Notes (Formulas & summaries)
-  ```
-- **Instant View Switcher**: Toggle seamlessly between **Folder View** and **Grid Cards**.
-- **1-Click Batch Semester Scaffolding**: Setup an entire semester's course catalog in seconds.
-
-### 5. 📺 On-Site Document Reader & Media Vault
-- **Distraction-Free In-App Viewer**: Read Google Drive notes, slide decks, and PDF textbooks directly inside the app without switching tabs.
-- **1-Click YouTube Curated Search**: Instant tutorial search button next to every topic across the platform.
-
-### 6. 🛡️ In-App Confirmation Guards & Storage Optimization
-- **Safe In-App Confirmations**: Native dark-themed confirmation modal system (`useConfirm`) protecting all delete actions (topics, notes, resources, agenda items).
-- **Storage Management**: "Clear Plan" and "Reset Schedule" features to keep MongoDB Atlas database storage lean and fast.
-
-### 7. 📱 Mobile-First 360px Optimization & Dark iOS Aesthetic
-- Polished dark UI with Apple blue (`#0A84FF`), deep obsidian backgrounds (`#0A0A0A`, `#141414`), and smooth Framer Motion spring physics.
-- Fully responsive on narrow screens down to 360px width.
+Try the [live StudyMate AI demo](https://study-mate-ai-wheat-seven.vercel.app/).
 
 ---
 
