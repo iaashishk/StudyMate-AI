@@ -42,6 +42,11 @@ const planEntrySchema = new Schema(
       enum: ["pending", "done", "missed"],
       default: "pending",
     },
+    entryType: {
+      type: String,
+      enum: ["theory", "coding_lab", "mock_quiz"],
+      default: "theory",
+    },
     // Priority score computed by the scoring engine (for AI Insights)
     priorityScore: {
       type: Number,

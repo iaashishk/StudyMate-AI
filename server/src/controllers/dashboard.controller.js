@@ -30,8 +30,17 @@ export const getDashboardSummary = asyncHandler(async (req, res) => {
       const d = new Date(e.date);
       return d >= today && d < tomorrow;
     });
-    todayTotal = todayEntries.length;
-    todayDone = todayEntries.filter((e) => e.status === "done").length;
+    // Deduplicate today's tasks by unique topic to prevent duplicate counts from rescheduled items
+    const uniqueMap = new Map();
+    todayEntries.forEach((e) => {
+      const k = e.topicId ? e.topicId.toString() : e.topicTitle;
+      if (!uniqueMap.has(k) || e.status === "done") {
+        uniqueMap.set(k, e);
+      }
+    });
+    const uniqueList = Array.from(uniqueMap.values());
+    todayTotal = uniqueList.length;
+    todayDone = uniqueList.filter((e) => e.status === "done").length;
   }
 
   // ── Streak calculation ─────────────────────────────────────────────────────

@@ -57,7 +57,27 @@ app.use("/api/dashboard", dashboardRouter);
 
 // ── Health check & Root info ────────────────────────────────────────────────
 app.get("/api/health", (_req, res) => {
-  res.json({ status: "ok", app: "StudyMate AI", time: new Date().toISOString() });
+  res.json({
+    status: "ok",
+    app: "StudyMate AI",
+    services: {
+      api: "healthy",
+      insightsEngine: "healthy",
+      plannerAlgorithm: "v2.0-multi-subject",
+    },
+    time: new Date().toISOString(),
+  });
+});
+
+app.get("/api/health/insights", (_req, res) => {
+  res.json({
+    status: "healthy",
+    service: "AI Schedule Insights Engine",
+    algorithm: "Priority Score = urgency × (6 − confidence) × topicWeight",
+    version: "v2.0-multi-subject",
+    multiSubjectPacing: true,
+    time: new Date().toISOString(),
+  });
 });
 
 app.get("/", (_req, res) => {

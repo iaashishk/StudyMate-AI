@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Lightbulb, Brain, Cpu, CheckCircle } from "lucide-react";
 import api from "../lib/api";
 import EmptyState from "../components/EmptyState";
@@ -10,7 +10,17 @@ export default function InsightsPage() {
   useEffect(() => {
     api
       .get("/plan/insights")
-      .then((res) => setInsights(res.data.data.insights))
+      .then((res) => {
+        const raw = res.data?.data?.insights;
+        if (Array.isArray(raw)) {
+          setInsights(raw);
+        } else if (raw && Array.isArray(raw.lines)) {
+          setInsights(raw.lines);
+        } else {
+          setInsights([]);
+        }
+      })
+      .catch(() => setInsights([]))
       .finally(() => setLoading(false));
   }, []);
 

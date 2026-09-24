@@ -27,6 +27,55 @@ function cleanHeaderTitle(title: string): string {
   }).join(" ");
 }
 
+export function estimateTopicMinutes(title: string): number {
+  const clean = (title || "").toLowerCase().trim();
+  const wordCount = clean.split(/\s+/).filter(Boolean).length;
+
+  // 1. Heavy theory / deep system implementation (40–45 mins)
+  if (
+    /\b(b\+?\s*trees?|concurrency\s*control|serializability|deadlocks?|query\s*optimization|multiversion|recovery\s*system|distributed\s*database|two\s*phase|2pl|compiler\s*design|dynamic\s*programming|graph\s*algorithms?|system\s*design|asymmetric\s*encryption)\b/i.test(
+      clean
+    )
+  ) {
+    return 45;
+  }
+
+  // 2. Micro-concepts, syntax keywords, definitions (5–10 mins)
+  if (
+    /\b(definition|syntax|operator|operators|keyword|keywords|comment|comments|variable|variables|datatype|data\s*types?|primary\s*key|foreign\s*key|candidate\s*key|super\s*key|alternate\s*key|attribute|attributes|tuple|cardinality|degree|domain|schema|instance|ddl|dml|dcl|tcl|entity|tag|tags|elements?|selector|selectors|git\s*init|commit|push|pull|branch|boolean|null|undefined|constant|constants|break|continue|return|pass|goto|identifier|identifiers|tokens?|literal|literals|ternary|boolean\s*algebra)\b/i.test(
+      clean
+    ) ||
+    (wordCount <= 2 && clean.length <= 15)
+  ) {
+    return clean.length <= 12 || wordCount === 1 ? 5 : 10;
+  }
+
+  // 3. Short focused primers & sub-topics (15 mins)
+  if (
+    /\b(introduction|overview|basics|primer|need\s*for|advantages?|disadvantages?|features|types\s*of|comparison|difference\s*between|vs\b|er\s*symbols?|keys?\s*in|views?\s*in|loops?|while|for\s*loop|functions?\s*syntax|conditional\s*statements?|if\s*else|switch\s*case|css\s*box\s*model|flexbox|grid\s*basics)\b/i.test(
+      clean
+    ) ||
+    (wordCount <= 3 && clean.length <= 25)
+  ) {
+    return 15;
+  }
+
+  // 4. Standard core modules (25 mins)
+  if (
+    /\b(relational\s*algebra|normal\s*form|normalization|1nf|2nf|3nf|bcnf|indexing|hashing|joins?|subquer(y|ies)|aggregate\s*functions?|views|transactions?|acid|cpu\s*scheduling|paging|segmentation|binary\s*trees?|linked\s*lists?|stacks?|queues?|oop|classes|objects|inheritance|polymorphism|encapsulation|interfaces?|dom\s*manipulation|event\s*handling|rest\s*api|express\s*routes)\b/i.test(
+      clean
+    )
+  ) {
+    return 25;
+  }
+
+  // 5. Default by word count
+  if (wordCount <= 2) return 10;
+  if (wordCount <= 4) return 15;
+  if (wordCount <= 6) return 25;
+  return 35;
+}
+
 function parseTopicsFromBlock(content: string, unitNumber: number, unitTitle: string): ParsedUnitTopic[] {
   if (!content) return [];
 
@@ -93,11 +142,7 @@ function parseTopicsFromBlock(content: string, unitNumber: number, unitTitle: st
     const key = title.toLowerCase();
     if (!seen.has(key)) {
       seen.add(key);
-
-      let est = 30;
-      if (key.includes("introduction") || key.includes("overview") || key.includes("basics")) est = 25;
-      else if (key.includes("calculus") || key.includes("trees") || key.includes("concurrency") || key.includes("normalization")) est = 45;
-      else if (title.split(" ").length > 5) est = 40;
+      const est = estimateTopicMinutes(title);
 
       unique.push({
         title,

@@ -16,9 +16,12 @@ import {
   Target,
   HelpCircle,
   Trash2,
+  Terminal,
+  FastForward,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useConfirm } from "../context/ConfirmContext";
+import { useToast } from "../context/ToastContext";
 import api from "../lib/api";
 import FocusRing from "../components/FocusRing";
 import EmptyState from "../components/EmptyState";
@@ -27,6 +30,7 @@ import type { PlanEntry, DashboardSummary, Subject } from "../types";
 
 export default function DashboardPage() {
   const { user } = useAuth();
+  const { toast } = useToast();
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [todayEntries, setTodayEntries] = useState<PlanEntry[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
@@ -116,6 +120,37 @@ export default function DashboardPage() {
       setSummary(summaryRes.data.data);
     } catch {
       await fetchData();
+    }
+  };
+
+  const [pullingNext, setPullingNext] = useState(false);
+
+  const handlePullNext = async () => {
+    setPullingNext(true);
+    try {
+      const res = await api.post("/plan/pull-next");
+      const pulled = res.data.data?.pulledEntry;
+      if (pulled) {
+        toast({
+          title: `⚡ "${pulled.topicTitle}" added to Today's Agenda (+25 Bonus XP)!`,
+          type: "success",
+        });
+        await fetchData();
+      } else {
+        toast({
+          title: "All curriculum topics are already scheduled or completed!",
+          type: "info",
+        });
+      }
+    } catch (err: unknown) {
+      toast({
+        title:
+          (err as { response?: { data?: { message?: string } } })?.response?.data
+            ?.message || "Failed to pull next topic",
+        type: "error",
+      });
+    } finally {
+      setPullingNext(false);
     }
   };
 
@@ -270,17 +305,55 @@ export default function DashboardPage() {
 
           {/* Today's Tasks Section */}
           <div className="bg-[#141414] border border-white/[0.09] rounded-2xl p-6 shadow-xl relative overflow-hidden">
-            <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center justify-between mb-5 flex-wrap gap-2">
               <div className="flex items-center gap-2">
                 <Target size={18} className="text-white" />
                 <h2 className="font-display text-lg text-white font-semibold">
                   Today's Study Agenda
                 </h2>
               </div>
-              <span className="text-xs font-mono text-ink-60">
-                {todayEntries.reduce((s, e) => s + e.estimatedMinutes, 0)} min allocated
-              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handlePullNext}
+                  disabled={pullingNext}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-medium text-slate-200 hover:text-white border border-white/10 transition-all cursor-pointer disabled:opacity-40"
+                  title="Pull the next scheduled topic into today's agenda early (+25 Bonus XP)"
+                >
+                  <FastForward size={13} className="text-[#0A84FF]" />
+                  <span>{pullingNext ? "Pulling…" : "Study Ahead"}</span>
+                </button>
+                <span className="text-xs font-mono text-ink-60">
+                  {todayEntries.reduce((s, e) => s + e.estimatedMinutes, 0)} min allocated
+                </span>
+              </div>
             </div>
+
+            {/* Early Completion Celebration Card */}
+            {todayTotal > 0 && todayDone === todayTotal && (
+              <div className="mb-4 p-4 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-sky-500/10 to-emerald-500/5 border border-emerald-500/30 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                    <Sparkles size={20} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-white">
+                      🎉 Today's agenda completed early!
+                    </p>
+                    <p className="text-xs text-ink-60">
+                      Have extra study time? Pull the next topic forward ahead of schedule with bonus XP.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={handlePullNext}
+                  disabled={pullingNext}
+                  className="px-4 py-2 rounded-xl bg-[#0A84FF] hover:opacity-90 active:scale-95 text-white text-xs font-semibold flex items-center gap-1.5 transition-all shadow-md shadow-[#0A84FF]/20 shrink-0 cursor-pointer disabled:opacity-40"
+                >
+                  <FastForward size={13} />
+                  <span>{pullingNext ? "Pulling Next…" : "Study Ahead (+25 XP)"}</span>
+                </button>
+              </div>
+            )}
 
             {todayEntries.length === 0 ? (
               <EmptyState
@@ -342,6 +415,15 @@ export default function DashboardPage() {
                             >
                               {entry.subjectName}
                             </span>
+                            {entry.entryType === "coding_lab" || entry.topicTitle.includes("Code Lab") ? (
+                              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center gap-1 font-semibold">
+                                <Terminal size={10} /> Coding Lab
+                              </span>
+                            ) : entry.entryType === "mock_quiz" || entry.topicTitle.includes("Mock Quiz") ? (
+                              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-purple-500/15 border border-purple-500/30 text-purple-400 flex items-center gap-1 font-semibold">
+                                <Sparkles size={10} /> Active Recall
+                              </span>
+                            ) : null}
                             <span className="text-[11px] font-mono text-ink-60 flex items-center gap-1">
                               <Clock size={11} />
                               {entry.estimatedMinutes}m

@@ -35,6 +35,12 @@ const noteSchema = new Schema(
       type: String,
       default: "",
     },
+    // Category classification: study_notes (Study Notes), syllabus (Curriculum/Syllabus), codes (Code/Programs), general
+    category: {
+      type: String,
+      enum: ["study_notes", "syllabus", "codes", "general"],
+      default: "study_notes",
+    },
     // Optional external reference (e.g. Google Drive PDF or Notion link)
     linkUrl: {
       type: String,

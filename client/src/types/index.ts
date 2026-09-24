@@ -20,10 +20,13 @@ export interface Resource {
 }
 
 // ── Cloud Notes (Cloud-backed per user) ─────────────────────────────────────
+export type NoteCategory = "study_notes" | "syllabus" | "codes" | "general";
+
 export interface SubjectNote {
   _id: string;
   title: string;
   content: string;
+  category?: NoteCategory;
   linkUrl?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -98,6 +101,7 @@ export interface PlanEntry {
   unitTitle?: string;
   estimatedMinutes: number;
   status: EntryStatus;
+  entryType?: "theory" | "coding_lab" | "mock_quiz";
   priorityScore?: number;
   whyLogic?: string;
   orderIndex?: number;

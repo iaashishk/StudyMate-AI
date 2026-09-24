@@ -20,6 +20,10 @@ import {
   ChevronDown,
   ChevronRight,
   Compass,
+  Copy,
+  Check,
+  Code2,
+  BookOpen,
 } from "lucide-react";
 import api from "../lib/api";
 import { parseApiError } from "../lib/error-handler";
@@ -30,8 +34,8 @@ import SyllabusParserModal from "../components/SyllabusParserModal";
 import InlineDocViewerModal from "../components/InlineDocViewerModal";
 import { useToast } from "../context/ToastContext";
 import { useConfirm } from "../context/ConfirmContext";
-import { parseSyllabusClient } from "../lib/syllabus-parser";
-import type { Subject, ResourceType, ParsedUnitTopic } from "../types";
+import { parseSyllabusClient, estimateTopicMinutes } from "../lib/syllabus-parser";
+import type { Subject, ResourceType, ParsedUnitTopic, NoteCategory } from "../types";
 
 export default function SubjectDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -67,7 +71,7 @@ export default function SubjectDetailPage() {
   const [newTopic, setNewTopic] = useState({
     title: "",
     confidenceScore: 3,
-    estimatedMinutes: 30,
+    estimatedMinutes: 15,
     unitNumber: 1,
   });
   const [addingTopic, setAddingTopic] = useState(false);
@@ -92,8 +96,18 @@ export default function SubjectDetailPage() {
     title: string;
     content: string;
     linkUrl?: string;
+    category?: NoteCategory;
   } | null>(null);
   const [savingNote, setSavingNote] = useState(false);
+  const [selectedNoteCategory, setSelectedNoteCategory] = useState<NoteCategory | "all">("all");
+  const [copiedNoteId, setCopiedNoteId] = useState<string | null>(null);
+
+  const handleCopyCode = (noteId: string, text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedNoteId(noteId);
+    toast({ title: "Code snippet copied to clipboard!", type: "success" });
+    setTimeout(() => setCopiedNoteId(null), 2000);
+  };
 
   // Focus Player state
   const [focusModal, setFocusModal] = useState<{
@@ -184,7 +198,7 @@ export default function SubjectDetailPage() {
     try {
       const res = await api.post(`/subjects/${id}/topics`, newTopic);
       setSubject(res.data.data.subject);
-      setNewTopic({ title: "", confidenceScore: 3, estimatedMinutes: 30, unitNumber: 1 });
+      setNewTopic({ title: "", confidenceScore: 3, estimatedMinutes: 15, unitNumber: 1 });
       toast({ title: "Topic added to curriculum", type: "success" });
     } catch (err: unknown) {
       toast({ title: parseApiError(err).message, type: "error" });
@@ -280,16 +294,39 @@ export default function SubjectDetailPage() {
     }
   };
 
+  // Auto detect category from title and content
+  const detectCategory = (title: string, content: string): NoteCategory => {
+    const text = `${title} ${content}`.toLowerCase();
+    if (
+      /```|def |function |import |class |const |let |var |select |from |console\.log|print\(|<html|public class|#include/.test(
+        text
+      )
+    ) {
+      return "codes";
+    }
+    if (/syllabus|course outline|unit [1-5]|scheme|curriculum|module [1-5]/.test(text)) {
+      return "syllabus";
+    }
+    if (/formula|cheat sheet|shortcuts|quick tips|reminder/.test(text)) {
+      return "general";
+    }
+    return "study_notes";
+  };
+
   // Save Note (Create or Update)
   const handleSaveNote = async () => {
     if (!activeNote || !activeNote.title.trim() || !id) return;
     setSavingNote(true);
     try {
+      const payload = {
+        ...activeNote,
+        category: activeNote.category || detectCategory(activeNote.title, activeNote.content || ""),
+      };
       let res;
       if (activeNote._id) {
-        res = await api.put(`/subjects/${id}/notes/${activeNote._id}`, activeNote);
+        res = await api.put(`/subjects/${id}/notes/${activeNote._id}`, payload);
       } else {
-        res = await api.post(`/subjects/${id}/notes`, activeNote);
+        res = await api.post(`/subjects/${id}/notes`, payload);
       }
       setSubject(res.data.data.subject);
       setNoteModal(false);
@@ -428,6 +465,22 @@ export default function SubjectDetailPage() {
     if (selectedUnitFilter === "all") return subject.topics;
     return subject.topics.filter((t) => (t.unitNumber || 1) === selectedUnitFilter);
   }, [subject?.topics, selectedUnitFilter]);
+
+  // Filtered notes based on selected category
+  const displayedNotes = useMemo(() => {
+    if (!subject?.notes) return [];
+    if (selectedNoteCategory === "all") return subject.notes;
+    return subject.notes.filter((n) => (n.category || "study_notes") === selectedNoteCategory);
+  }, [subject?.notes, selectedNoteCategory]);
+
+  const noteCategoryCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: subject?.notes?.length || 0 };
+    (subject?.notes || []).forEach((n) => {
+      const cat = n.category || "study_notes";
+      counts[cat] = (counts[cat] || 0) + 1;
+    });
+    return counts;
+  }, [subject?.notes]);
 
   if (loading) {
     return (
@@ -1099,8 +1152,16 @@ export default function SubjectDetailPage() {
                     </label>
                     <input
                       value={newTopic.title}
-                      onChange={(e) => setNewTopic((prev) => ({ ...prev, title: e.target.value }))}
-                      placeholder="e.g. Graph BFS & DFS Algorithms"
+                      onChange={(e) => {
+                        const title = e.target.value;
+                        const autoEst = estimateTopicMinutes(title);
+                        setNewTopic((prev) => ({
+                          ...prev,
+                          title,
+                          estimatedMinutes: title.trim().length > 2 ? autoEst : prev.estimatedMinutes,
+                        }));
+                      }}
+                      placeholder="e.g. Primary Key, Normalization, B+ Trees"
                       className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-white focus:outline-none focus:border-[#0A84FF]/50"
                     />
                   </div>
@@ -1126,22 +1187,46 @@ export default function SubjectDetailPage() {
                     </div>
 
                     <div>
-                      <label className="block text-xs font-mono text-ink-60 uppercase tracking-wider mb-1">
-                        Minutes
-                      </label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-mono text-ink-60 uppercase tracking-wider">
+                          Minutes
+                        </label>
+                        <span className="text-[10px] text-ink-60 font-mono">
+                          {newTopic.estimatedMinutes}m est.
+                        </span>
+                      </div>
                       <input
                         type="number"
                         min={5}
                         step={5}
                         value={newTopic.estimatedMinutes}
-                        onChange={(e) =>
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value, 10);
                           setNewTopic((prev) => ({
                             ...prev,
-                            estimatedMinutes: parseInt(e.target.value, 10) || 30,
-                          }))
-                        }
+                            estimatedMinutes: isNaN(val) ? 5 : Math.max(val, 5),
+                          }));
+                        }}
                         className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-white focus:outline-none focus:border-[#0A84FF]/50 font-mono"
                       />
+                      <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+                        {[5, 10, 15, 25, 30, 45].map((m) => (
+                          <button
+                            key={m}
+                            type="button"
+                            onClick={() =>
+                              setNewTopic((prev) => ({ ...prev, estimatedMinutes: m }))
+                            }
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-mono cursor-pointer transition-colors ${
+                              newTopic.estimatedMinutes === m
+                                ? "bg-[#0A84FF] text-white font-semibold"
+                                : "bg-white/5 text-ink-60 hover:text-white"
+                            }`}
+                          >
+                            {m}m
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
 
@@ -1175,100 +1260,203 @@ export default function SubjectDetailPage() {
       {/* ── TAB 2: Notes & Documents ───────────────────────────────────── */}
       {activeTab === "notes" && (
         <div className="space-y-6">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <h2 className="text-lg text-white font-semibold">Subject Notes Hub</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg text-white font-semibold">Subject Notes Hub</h2>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-white/70 font-mono">
+                  {subject.notes?.length || 0}
+                </span>
+              </div>
               <p className="text-xs text-ink-60">
-                Course summaries, lecture cheat sheets, and direct links to your Google Drive notes PDFs.
+                Course summaries, lecture cheat sheets, programs, and direct links to Google Drive PDFs.
               </p>
             </div>
 
             <button
               onClick={() => {
-                setActiveNote({ title: "", content: "", linkUrl: "" });
+                setActiveNote({ title: "", content: "", linkUrl: "", category: "study_notes" });
                 setNoteModal(true);
               }}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#0A84FF] text-white text-xs font-semibold hover:opacity-88 cursor-pointer"
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#0A84FF] text-white text-xs font-semibold hover:opacity-88 active:scale-95 transition-all cursor-pointer self-start sm:self-auto shadow-sm"
             >
               <Plus size={15} />
               <span>Create Note</span>
             </button>
           </div>
 
+          {/* Category Filter Pills */}
+          {subject.notes && subject.notes.length > 0 && (
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+              {(
+                [
+                  { id: "all", label: "All Notes", count: noteCategoryCounts.all, icon: Layers },
+                  { id: "study_notes", label: "Study Notes", count: noteCategoryCounts.study_notes || 0, icon: FileText },
+                  { id: "syllabus", label: "Syllabus", count: noteCategoryCounts.syllabus || 0, icon: BookOpen },
+                  { id: "codes", label: "Code & Programs", count: noteCategoryCounts.codes || 0, icon: Code2 },
+                  { id: "general", label: "General & Tips", count: noteCategoryCounts.general || 0, icon: Sparkles },
+                ] as const
+              ).map((tab) => {
+                const Icon = tab.icon;
+                const isActive = selectedNoteCategory === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setSelectedNoteCategory(tab.id as NoteCategory | "all")}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition-all whitespace-nowrap ${
+                      isActive
+                        ? "bg-[#0A84FF] border-[#0A84FF] text-white shadow-sm"
+                        : "bg-[#141414] border-white/8 text-ink-60 hover:text-white hover:border-white/20"
+                    }`}
+                  >
+                    <Icon size={13} />
+                    <span>{tab.label}</span>
+                    <span
+                      className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                        isActive ? "bg-white/20 text-white" : "bg-white/5 text-ink-60"
+                      }`}
+                    >
+                      {tab.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           {!subject.notes || subject.notes.length === 0 ? (
             <div className="p-8 rounded-2xl bg-[#141414] border border-white/8 text-center text-xs text-ink-60 space-y-3">
-              <FileText size={32} className="mx-auto opacity-40" />
+              <FileText size={32} className="mx-auto opacity-40 text-sky-400" />
               <p>No notes written for {subject.name} yet.</p>
               <button
                 onClick={() => {
-                  setActiveNote({ title: "", content: "", linkUrl: "" });
+                  setActiveNote({ title: "", content: "", linkUrl: "", category: "study_notes" });
                   setNoteModal(true);
                 }}
-                className="px-4 py-2 rounded-xl bg-[#0A84FF] text-white text-xs font-semibold"
+                className="px-4 py-2 rounded-xl bg-[#0A84FF] text-white text-xs font-semibold cursor-pointer"
               >
                 Write First Note
               </button>
             </div>
+          ) : displayedNotes.length === 0 ? (
+            <div className="p-8 rounded-2xl bg-[#141414] border border-white/8 text-center text-xs text-ink-60 space-y-3">
+              <p>No notes found in this category.</p>
+              <button
+                onClick={() => setSelectedNoteCategory("all")}
+                className="px-3 py-1.5 rounded-xl border border-white/10 text-xs text-ink-60 hover:text-white"
+              >
+                Show All Notes
+              </button>
+            </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {subject.notes.map((n) => (
-                <div
-                  key={n._id}
-                  className="p-5 rounded-2xl bg-[#141414] border border-white/8 hover:border-white/15 transition-all group flex flex-col justify-between"
-                >
-                  <div>
-                    <div className="flex items-center justify-between gap-2 mb-2">
-                      <h4 className="text-sm font-semibold text-white truncate">{n.title}</h4>
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button
-                          onClick={() => {
-                            setActiveNote({ ...n });
-                            setNoteModal(true);
-                          }}
-                          className="p-1 text-ink-60 hover:text-white rounded"
-                          title="Edit note"
-                        >
-                          <Edit2 size={13} />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteNote(n._id, n.title)}
-                          className="p-1 text-ink-60 hover:text-rose-400 rounded"
-                          title="Delete note"
-                        >
-                          <Trash2 size={13} />
-                        </button>
+              {displayedNotes.map((n) => {
+                const cat = n.category || "study_notes";
+                const isCode = cat === "codes";
+
+                const badgeConfig = {
+                  study_notes: { label: "Study Notes", icon: FileText, color: "text-sky-400", bg: "bg-sky-500/10 border-sky-500/25" },
+                  syllabus: { label: "Syllabus", icon: BookOpen, color: "text-purple-400", bg: "bg-purple-500/10 border-purple-500/25" },
+                  codes: { label: "Code & Script", icon: Code2, color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/25" },
+                  general: { label: "General", icon: Sparkles, color: "text-amber-400", bg: "bg-amber-500/10 border-amber-500/25" },
+                }[cat] || { label: "Notes", icon: FileText, color: "text-sky-400", bg: "bg-sky-500/10 border-sky-500/25" };
+
+                const BadgeIcon = badgeConfig.icon;
+
+                return (
+                  <div
+                    key={n._id}
+                    className="p-5 rounded-2xl bg-[#141414] border border-white/8 hover:border-white/15 transition-all group flex flex-col justify-between"
+                  >
+                    <div>
+                      {/* Note Category Pill + Actions */}
+                      <div className="flex items-center justify-between gap-2 mb-2.5">
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono border ${badgeConfig.bg} ${badgeConfig.color}`}>
+                          <BadgeIcon size={11} />
+                          <span>{badgeConfig.label}</span>
+                        </span>
+
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={() => {
+                              setActiveNote({ ...n });
+                              setNoteModal(true);
+                            }}
+                            className="p-1 text-ink-60 hover:text-white rounded"
+                            title="Edit note"
+                          >
+                            <Edit2 size={13} />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteNote(n._id, n.title)}
+                            className="p-1 text-ink-60 hover:text-rose-400 rounded"
+                            title="Delete note"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
                       </div>
+
+                      <h4 className="text-sm font-semibold text-white truncate mb-2">{n.title}</h4>
+
+                      {/* Content view: code formatted or standard note */}
+                      {isCode ? (
+                        <div className="relative mb-3 group/code">
+                          <pre className="p-3 rounded-xl bg-black/60 border border-emerald-500/20 text-[11px] font-mono text-emerald-300 overflow-x-auto max-h-40 whitespace-pre leading-relaxed scrollbar-thin">
+                            {n.content || "// Empty code snippet"}
+                          </pre>
+                          {n.content && (
+                            <button
+                              onClick={() => handleCopyCode(n._id, n.content)}
+                              className="absolute top-2 right-2 px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 border border-white/15 text-[10px] font-mono text-white flex items-center gap-1 backdrop-blur-sm transition-all shadow"
+                              title="Copy code"
+                            >
+                              {copiedNoteId === n._id ? (
+                                <>
+                                  <Check size={11} className="text-emerald-400" />
+                                  <span className="text-emerald-400">Copied</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy size={11} />
+                                  <span>Copy</span>
+                                </>
+                              )}
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-ink-60 line-clamp-3 leading-relaxed mb-3 whitespace-pre-wrap">
+                          {n.content || "Empty note content."}
+                        </p>
+                      )}
                     </div>
 
-                    <p className="text-xs text-ink-60 line-clamp-3 leading-relaxed mb-3 whitespace-pre-wrap">
-                      {n.content || "Empty note content."}
-                    </p>
-                  </div>
+                    <div className="pt-3 border-t border-white/5 flex items-center justify-between text-xs">
+                      <span className="text-[10px] font-mono text-ink-60">
+                        {n.updatedAt ? new Date(n.updatedAt).toLocaleDateString() : ""}
+                      </span>
 
-                  <div className="pt-3 border-t border-white/5 flex items-center justify-between text-xs">
-                    <span className="text-[10px] font-mono text-ink-60">
-                      {n.updatedAt ? new Date(n.updatedAt).toLocaleDateString() : ""}
-                    </span>
-
-                    {n.linkUrl && (
-                      <button
-                        onClick={() =>
-                          setViewerModal({
-                            open: true,
-                            title: n.title,
-                            url: n.linkUrl!,
-                            type: "drive",
-                          })
-                        }
-                        className="flex items-center gap-1 text-[#0A84FF] hover:underline font-medium cursor-pointer"
-                      >
-                        <Eye size={12} />
-                        <span>View Attachment</span>
-                      </button>
-                    )}
+                      {n.linkUrl && (
+                        <button
+                          onClick={() =>
+                            setViewerModal({
+                              open: true,
+                              title: n.title,
+                              url: n.linkUrl!,
+                              type: "drive",
+                            })
+                          }
+                          className="flex items-center gap-1 text-[#0A84FF] hover:underline font-medium cursor-pointer"
+                        >
+                          <Eye size={12} />
+                          <span>View Doc</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -1518,9 +1706,44 @@ export default function SubjectDetailPage() {
               onChange={(e) =>
                 setActiveNote((prev) => (prev ? { ...prev, title: e.target.value } : null))
               }
-              placeholder="e.g. Unit 1 Key Formulas, Quick Cheat Sheet"
+              placeholder="e.g. Unit 1 Key Formulas, Quick Cheat Sheet, Binary Search Code"
               className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-white focus:outline-none focus:border-[#0A84FF]/50"
             />
+          </div>
+
+          {/* Category Picker */}
+          <div>
+            <label className="block text-xs font-mono text-ink-60 uppercase mb-1.5">Note Category</label>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {(
+                [
+                  { id: "study_notes", label: "Study Notes", icon: FileText, color: "text-sky-400" },
+                  { id: "syllabus", label: "Syllabus", icon: BookOpen, color: "text-purple-400" },
+                  { id: "codes", label: "Code & Script", icon: Code2, color: "text-emerald-400" },
+                  { id: "general", label: "General", icon: Sparkles, color: "text-amber-400" },
+                ] as const
+              ).map((cat) => {
+                const Icon = cat.icon;
+                const isSelected = (activeNote?.category || "study_notes") === cat.id;
+                return (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() =>
+                      setActiveNote((prev) => (prev ? { ...prev, category: cat.id } : null))
+                    }
+                    className={`flex items-center gap-1.5 px-2.5 py-2 rounded-xl text-xs font-medium border transition-all text-left ${
+                      isSelected
+                        ? "bg-white/10 border-[#0A84FF] text-white shadow-sm ring-1 ring-[#0A84FF]/40"
+                        : "bg-white/[0.03] border-white/8 text-ink-60 hover:text-white hover:border-white/20"
+                    }`}
+                  >
+                    <Icon size={13} className={cat.color} />
+                    <span className="truncate">{cat.label}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           <div>
@@ -1539,16 +1762,22 @@ export default function SubjectDetailPage() {
 
           <div>
             <label className="block text-xs font-mono text-ink-60 uppercase mb-1">
-              Content / Markdown
+              {activeNote?.category === "codes" ? "Code / Script Snippet" : "Content / Markdown"}
             </label>
             <textarea
               value={activeNote?.content || ""}
               onChange={(e) =>
                 setActiveNote((prev) => (prev ? { ...prev, content: e.target.value } : null))
               }
-              placeholder="Type your notes, key takeaways, and formulas here..."
+              placeholder={
+                activeNote?.category === "codes"
+                  ? "Paste code snippet, script, SQL query, or algorithm here..."
+                  : "Type your notes, key takeaways, and formulas here..."
+              }
               rows={8}
-              className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-white focus:outline-none focus:border-[#0A84FF]/50 resize-y"
+              className={`w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-white focus:outline-none focus:border-[#0A84FF]/50 resize-y ${
+                activeNote?.category === "codes" ? "font-mono text-emerald-300" : ""
+              }`}
             />
           </div>
 

@@ -203,3 +203,56 @@ export const clearPlan = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, null, "Study plan cleared and database space freed"));
 });
 
+// ── POST /api/plan/pull-next ──────────────────────────────────────────────────
+export const pullNextEntryToToday = asyncHandler(async (req, res) => {
+  const plan = await StudyPlan.findOne({ userId: req.user._id });
+  if (!plan) throw new ApiError(404, "No study plan found. Generate a plan first!");
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  // Find future pending topics scheduled for tomorrow or later
+  const futureEntries = plan.planEntries
+    .filter((e) => {
+      const d = new Date(e.date);
+      return d >= tomorrow && e.status === "pending";
+    })
+    .sort(
+      (a, b) =>
+        new Date(a.date).getTime() - new Date(b.date).getTime() ||
+        (a.orderIndex || 0) - (b.orderIndex || 0)
+    );
+
+  if (futureEntries.length === 0) {
+    return res.status(200).json(
+      new ApiResponse(
+        200,
+        { pulledEntry: null, plan },
+        "All future topics in your curriculum are already completed or scheduled for today!"
+      )
+    );
+  }
+
+  // Pull the next topic forward into today's agenda
+  const nextEntry = futureEntries[0];
+  const entryDoc = plan.planEntries.id(nextEntry._id);
+
+  if (entryDoc) {
+    entryDoc.date = new Date(); // Move to today
+    entryDoc.xpReward = (entryDoc.xpReward || 50) + 25; // Bonus XP for proactive study ahead!
+    entryDoc.whyLogic = `🚀 Early Study Accelerator: Pulled forward ahead of schedule with +25 Bonus XP because you conquered today's agenda early.`;
+  }
+
+  await plan.save();
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      { pulledEntry: entryDoc, plan },
+      `Pulled "${entryDoc.topicTitle}" into today's agenda with +25 Bonus XP!`
+    )
+  );
+});
+

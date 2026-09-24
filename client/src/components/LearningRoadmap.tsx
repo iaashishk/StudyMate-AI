@@ -436,9 +436,19 @@ export default function LearningRoadmap({
                       {/* Top Badges */}
                       <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
                         <div className="flex items-center gap-1.5">
-                          <span className="text-[10px] font-mono text-[#0A84FF] px-2 py-0.5 rounded-full bg-white/5 border border-[#0A84FF]/25 font-semibold">
-                            Unit {entry.unitNumber || 1}
-                          </span>
+                          {entry.entryType === "coding_lab" || entry.topicTitle.includes("Code Lab") ? (
+                            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-semibold">
+                              💻 Coding Lab
+                            </span>
+                          ) : entry.entryType === "mock_quiz" || entry.topicTitle.includes("Mock Quiz") ? (
+                            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-purple-500/15 border border-purple-500/30 text-purple-400 font-semibold">
+                              📝 Active Recall
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-mono text-[#0A84FF] px-2 py-0.5 rounded-full bg-white/5 border border-[#0A84FF]/25 font-semibold">
+                              Unit {entry.unitNumber || 1}
+                            </span>
+                          )}
                           <span className="text-[10px] font-mono text-ink-60 flex items-center gap-1">
                             <Mountain size={10} />
                             {waypointAlt}m

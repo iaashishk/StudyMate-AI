@@ -9,11 +9,24 @@ import {
   deleteEntry,
   clearPlan,
   getInsights,
+  pullNextEntryToToday,
 } from "../controllers/plan.controller.js";
 import { verifyJWT } from "../middlewares/auth.middleware.js";
 import { validate } from "../middlewares/validator.middleware.js";
 
 const router = Router();
+
+// ── Public Insights Engine Health Check ─────────────────────────────────────
+router.get("/insights/health", (_req, res) => {
+  res.status(200).json({
+    status: "healthy",
+    service: "AI Schedule Insights Engine",
+    algorithm: "Priority Score = urgency × (6 − confidence) × topicWeight",
+    version: "v2.0-multi-subject",
+    multiSubjectPacing: true,
+    timestamp: new Date().toISOString(),
+  });
+});
 
 router.use(verifyJWT);
 
@@ -33,6 +46,7 @@ router.get("/today", getTodaysPlan);
 router.get("/week", getWeekPlan);
 router.get("/all", getFullPlan);
 router.get("/insights", getInsights);
+router.post("/pull-next", pullNextEntryToToday);
 
 router.delete("/clear", clearPlan);
 router.delete("/entries/:entryId", deleteEntry);

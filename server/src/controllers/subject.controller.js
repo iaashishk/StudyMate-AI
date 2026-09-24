@@ -359,9 +359,28 @@ export const deleteResource = asyncHandler(async (req, res) => {
   return res.status(200).json(new ApiResponse(200, { subject }, "Resource deleted"));
 });
 
+function detectNoteCategory(title = "", content = "") {
+  const text = (title + " " + content).toLowerCase();
+  if (
+    /\b(code|coding|program|syntax|function|def |import |class |algorithm|script|sql|query|queries|schema|html|css|javascript|python|java|c\+\+|implement|implementation)\b/i.test(
+      text
+    )
+  ) {
+    return "codes";
+  }
+  if (
+    /\b(syllabus|curriculum|module|course outline|units?|course structure|exam pattern|scheme)\b/i.test(
+      text
+    )
+  ) {
+    return "syllabus";
+  }
+  return "study_notes";
+}
+
 // ── POST /api/subjects/:id/notes ──────────────────────────────────────────────
 export const addNote = asyncHandler(async (req, res) => {
-  const { title, content, linkUrl } = req.body;
+  const { title, content, linkUrl, category } = req.body;
 
   if (!title) {
     throw new ApiError(400, "Note title is required");
@@ -373,9 +392,15 @@ export const addNote = asyncHandler(async (req, res) => {
   });
   if (!subject) throw new ApiError(404, "Subject not found");
 
+  const noteCategory =
+    category && ["study_notes", "syllabus", "codes", "general"].includes(category)
+      ? category
+      : detectNoteCategory(title, content);
+
   subject.notes.push({
     title,
     content: content || "",
+    category: noteCategory,
     linkUrl: linkUrl || "",
   });
 
@@ -386,7 +411,7 @@ export const addNote = asyncHandler(async (req, res) => {
 
 // ── PUT /api/subjects/:id/notes/:noteId ───────────────────────────────────────
 export const updateNote = asyncHandler(async (req, res) => {
-  const { title, content, linkUrl } = req.body;
+  const { title, content, linkUrl, category } = req.body;
 
   const subject = await Subject.findOne({
     _id: req.params.id,
@@ -400,6 +425,11 @@ export const updateNote = asyncHandler(async (req, res) => {
   if (title !== undefined) note.title = title;
   if (content !== undefined) note.content = content;
   if (linkUrl !== undefined) note.linkUrl = linkUrl;
+  if (category !== undefined) {
+    note.category = ["study_notes", "syllabus", "codes", "general"].includes(category)
+      ? category
+      : note.category;
+  }
 
   await subject.save();
 
@@ -435,6 +465,7 @@ export const getAllNotes = asyncHandler(async (req, res) => {
         semesterOrTrack: s.semesterOrTrack,
         title: n.title,
         content: n.content,
+        category: n.category || detectNoteCategory(n.title, n.content),
         linkUrl: n.linkUrl,
         createdAt: n.createdAt,
         updatedAt: n.updatedAt,
