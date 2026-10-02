@@ -1404,6 +1404,13 @@ export const deleteHoliday = asyncHandler(async (req, res) => {
   );
 });
 
+export const clearAllHolidays = asyncHandler(async (req, res) => {
+  const result = await Holiday.deleteMany({ userId: req.user._id });
+  return res.status(200).json(
+    new ApiResponse(200, { deletedCount: result.deletedCount }, "All holidays cleared")
+  );
+});
+
 export const autoPopulateHolidays = asyncHandler(async (req, res) => {
   const currentYear = new Date().getFullYear();
   const year = Number(req.body.year) || currentYear;

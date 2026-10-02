@@ -336,6 +336,13 @@ export const attendanceApi = {
     return res.data.data;
   },
 
+  clearAllHolidays: async () => {
+    const res = await api.delete<{ data: { deletedCount: number } }>(
+      "/attendance/holidays"
+    );
+    return res.data.data;
+  },
+
   autoPopulateHolidays: async (year?: number) => {
     const res = await api.post<{
       data: { addedCount: number; totalHolidays: number; holidays: HolidayItem[] };

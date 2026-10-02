@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { HolidayItem } from "../../types/attendance";
 import { attendanceApi } from "../../lib/attendance-api";
+import { cleanHolidayDisplay } from "../../lib/holiday-parser";
 import HolidayParserModal from "./HolidayParserModal";
 
 interface HolidayCalendarTabProps {
@@ -22,6 +23,8 @@ export default function HolidayCalendarTab({
   const [holidays, setHolidays] = useState<HolidayItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isPopulating, setIsPopulating] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [isParserModalOpen, setIsParserModalOpen] = useState(false);
   const [newDate, setNewDate] = useState("");
   const [newLabel, setNewLabel] = useState("");
@@ -86,10 +89,26 @@ export default function HolidayCalendarTab({
     try {
       await attendanceApi.deleteHoliday(id);
       setHolidays((prev) => prev.filter((h) => h._id !== id));
-      showToast(`Removed "${label}"`);
+      showToast(`Removed "${cleanHolidayDisplay(label)}"`);
       if (onHolidaysUpdated) onHolidaysUpdated();
     } catch (err) {
       console.error("Delete failed", err);
+    }
+  };
+
+  const handleClearAllHolidays = async () => {
+    setIsClearing(true);
+    try {
+      const res = await attendanceApi.clearAllHolidays();
+      setHolidays([]);
+      setShowClearConfirm(false);
+      showToast(`Cleared all ${res.deletedCount} holidays.`);
+      if (onHolidaysUpdated) onHolidaysUpdated();
+    } catch (err) {
+      console.error("Clear all failed", err);
+      showToast("Failed to clear holidays");
+    } finally {
+      setIsClearing(false);
     }
   };
 
@@ -144,6 +163,18 @@ export default function HolidayCalendarTab({
                   : "Auto-Import Academic Holidays"}
               </span>
             </button>
+
+            {holidays.length > 0 && (
+              <button
+                onClick={() => setShowClearConfirm(true)}
+                disabled={isClearing}
+                className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-2xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/25 text-rose-300 text-xs font-bold transition-all cursor-pointer shadow-sm disabled:opacity-50"
+                title="Clear all registered holidays"
+              >
+                <Trash2 size={14} className="text-rose-400" />
+                <span>Clear All ({holidays.length})</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -201,7 +232,7 @@ export default function HolidayCalendarTab({
                           <Palmtree size={16} />
                         </div>
                         <div>
-                          <p className="font-bold text-white text-sm tracking-tight">{h.label}</p>
+                          <p className="font-bold text-white text-sm tracking-tight">{cleanHolidayDisplay(h.label)}</p>
                           <p className="text-[11px] font-mono text-[#8E8E93]">
                             {formatted} ({h.date})
                           </p>
@@ -230,7 +261,7 @@ export default function HolidayCalendarTab({
                         className="p-2.5 rounded-xl bg-white/[0.01] border border-white/5 opacity-60 hover:opacity-100 flex items-center justify-between gap-3 text-xs"
                       >
                         <span className="font-medium text-white/80">
-                          {h.label} — <span className="font-mono text-[#8E8E93]">{h.date}</span>
+                          {cleanHolidayDisplay(h.label)} — <span className="font-mono text-[#8E8E93]">{h.date}</span>
                         </span>
                         <button
                           onClick={() => handleDeleteHoliday(h._id, h.label)}
@@ -296,6 +327,40 @@ export default function HolidayCalendarTab({
           </div>
         </div>
       </div>
+
+      {showClearConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="w-full max-w-sm bg-[#1C1C1E] border border-white/10 rounded-3xl p-6 shadow-2xl space-y-4 text-center">
+            <div className="w-12 h-12 mx-auto rounded-2xl bg-rose-500/15 border border-rose-500/25 flex items-center justify-center text-rose-400">
+              <Trash2 size={22} />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-white">Clear All Holidays?</h3>
+              <p className="text-xs text-[#8E8E93] mt-1.5 leading-relaxed">
+                This will remove all <strong className="text-white">{holidays.length}</strong> registered holidays from your calendar. You can re-scan your official circular or auto-populate anytime.
+              </p>
+            </div>
+            <div className="flex items-center justify-center gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowClearConfirm(false)}
+                disabled={isClearing}
+                className="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/80 text-xs font-semibold cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleClearAllHolidays}
+                disabled={isClearing}
+                className="px-4 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold transition-all shadow-lg shadow-rose-500/25 cursor-pointer disabled:opacity-50"
+              >
+                {isClearing ? "Clearing..." : "Yes, Clear All"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <HolidayParserModal
         isOpen={isParserModalOpen}

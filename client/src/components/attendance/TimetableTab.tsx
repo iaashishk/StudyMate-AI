@@ -53,6 +53,7 @@ export default function TimetableTab() {
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string>("all");
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [showClearAllConfirm, setShowClearAllConfirm] = useState(false);
   const [isParserModalOpen, setIsParserModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -188,6 +189,13 @@ export default function TimetableTab() {
     showToast("Day cleared");
   };
 
+  // Clear entire timetable
+  const handleClearAllSlots = () => {
+    setSlots([]);
+    setShowClearAllConfirm(false);
+    showToast("Cleared all timetable slots. Click 'Save Timetable' to commit.");
+  };
+
   const handleSave = async () => {
     setIsSaving(true);
     try {
@@ -312,6 +320,17 @@ export default function TimetableTab() {
             <Clock size={13} className="text-amber-400" />
             <span>Reset 9 AM – 4 PM Timings</span>
           </button>
+
+          {slots.some((s) => s.subjectId) && (
+            <button
+              onClick={() => setShowClearAllConfirm(true)}
+              className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/25 text-rose-300 transition-colors cursor-pointer"
+              title="Clear all weekly timetable slots"
+            >
+              <Trash2 size={13} className="text-rose-400" />
+              <span>Clear Timetable</span>
+            </button>
+          )}
 
           <span className="text-[#8E8E93] text-[11px] ml-auto hidden sm:inline">
             Tip: Toggle <b>Lab / Lecture / Tutorial</b> badge on any slot
@@ -495,6 +514,39 @@ export default function TimetableTab() {
         </div>
       )}
 
+      {/* Clear Timetable Confirmation Modal */}
+      {showClearAllConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="w-full max-w-sm bg-[#1C1C1E] border border-white/10 rounded-3xl p-6 shadow-2xl space-y-4 text-center">
+            <div className="w-12 h-12 mx-auto rounded-2xl bg-rose-500/15 border border-rose-500/25 flex items-center justify-center text-rose-400">
+              <Trash2 size={22} />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-white">Clear Weekly Timetable?</h3>
+              <p className="text-xs text-[#8E8E93] mt-1.5 leading-relaxed">
+                This will unassign all classes across Monday to Sunday. Click <strong>"Save Timetable"</strong> afterwards to commit the changes.
+              </p>
+            </div>
+            <div className="flex items-center justify-center gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowClearAllConfirm(false)}
+                className="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/80 text-xs font-semibold cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleClearAllSlots}
+                className="px-4 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold transition-all shadow-lg shadow-rose-500/25 cursor-pointer"
+              >
+                Yes, Clear All
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Timetable Parser Modal */}
       {isParserModalOpen && (
         <TimetableParserModal
@@ -502,13 +554,20 @@ export default function TimetableTab() {
           onClose={() => setIsParserModalOpen(false)}
           subjects={subjects}
           onApplySlots={async (newSlots) => {
+            try {
+              const refreshedSubjects = await attendanceApi.getSubjects();
+              setSubjects(refreshedSubjects);
+            } catch (e) {
+              console.error("Failed to refresh subjects", e);
+            }
+
             setSlots((prev) => {
               const prevMap = new Map<string, TimetableSlot>();
               prev.forEach((s) => prevMap.set(`${s.weekday}_${s.slotIndex}`, s));
               newSlots.forEach((s) => prevMap.set(`${s.weekday}_${s.slotIndex}`, s));
               return Array.from(prevMap.values());
             });
-            showToast(`Imported ${newSlots.length} slots into weekly timetable!`);
+            showToast(`Imported ${newSlots.length} sessions! Click "Save Timetable" to commit.`);
           }}
         />
       )}

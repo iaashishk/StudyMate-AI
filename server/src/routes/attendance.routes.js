@@ -30,6 +30,7 @@ import {
   updateSemesterDates,
   addHoliday,
   deleteHoliday,
+  clearAllHolidays,
   autoPopulateHolidays,
   resetSemester,
   exportAttendanceData,
@@ -87,6 +88,7 @@ router.get("/settings", getAttendanceSettings);
 router.put("/settings", updateAttendanceSettings);
 router.put("/settings/semester", updateSemesterDates);
 router.post("/holidays", addHoliday);
+router.delete("/holidays", clearAllHolidays);
 router.delete("/holidays/:id", deleteHoliday);
 router.post("/holidays/auto-populate", autoPopulateHolidays);
 router.post("/reset", resetSemester);

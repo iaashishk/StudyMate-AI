@@ -6,10 +6,16 @@ import {
   Sparkles,
   CheckCircle2,
   AlertCircle,
+  Trash2,
+  Info,
+  CheckSquare,
+  Square,
+  Calendar,
 } from "lucide-react";
 import { extractSyllabusFromFile, type ExtractionProgress } from "../../lib/file-extractor";
 import {
   parseAcademicDocFromText,
+  cleanHolidayDisplay,
   type ParsedHolidayResult,
   type ParsedAcademicDocResult,
 } from "../../lib/holiday-parser";
@@ -30,7 +36,9 @@ export default function HolidayParserModal({
   const [extracting, setExtracting] = useState(false);
   const [extractionProgress, setExtractionProgress] = useState<ExtractionProgress | null>(null);
   const [parsedDoc, setParsedDoc] = useState<ParsedAcademicDocResult | null>(null);
-  const [parsedHolidays, setParsedHolidays] = useState<ParsedHolidayResult[]>([]);
+  const [items, setItems] = useState<ParsedHolidayResult[]>([]);
+  const [selectedDates, setSelectedDates] = useState<Set<string>>(new Set());
+  const [activeTab, setActiveTab] = useState<"off_days" | "all" | "skipped">("off_days");
   const [isImporting, setIsImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -49,7 +57,7 @@ export default function HolidayParserModal({
     setFileName(selectedFile.name);
     setError(null);
     setExtracting(true);
-    setExtractionProgress({ stage: "reading", progress: 10, message: "Reading academic notice…" });
+    setExtractionProgress({ stage: "reading", progress: 10, message: "Reading circular text…" });
 
     try {
       const { text } = await extractSyllabusFromFile(selectedFile, (p) => {
@@ -58,11 +66,17 @@ export default function HolidayParserModal({
 
       const doc = parseAcademicDocFromText(text);
       setParsedDoc(doc);
-      setParsedHolidays(doc.holidays);
 
-      if (doc.holidays.length === 0 && !doc.semesterStartDate) {
+      const allItems = doc.allExtractedItems.length > 0 ? doc.allExtractedItems : doc.holidays;
+      setItems(allItems);
+
+      // Default checked: only official off-days (Gazetted + Observed Restricted)
+      const offDayDates = new Set(doc.holidays.map((h) => h.date));
+      setSelectedDates(offDayDates);
+
+      if (allItems.length === 0 && !doc.semesterStartDate) {
         setError(
-          "We read the file, but could not detect holiday dates or semester duration. Ensure the image has clear dates like '26 January' or '05/01/2026'."
+          "We read the file, but could not detect holiday dates. Ensure the circular has clear dates like '26 January' or '05/01/2026'."
         );
       }
     } catch (err: unknown) {
@@ -73,11 +87,50 @@ export default function HolidayParserModal({
     }
   };
 
+  const toggleSelectDate = (date: string) => {
+    setSelectedDates((prev) => {
+      const next = new Set(prev);
+      if (next.has(date)) {
+        next.delete(date);
+      } else {
+        next.add(date);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAll = (visibleItems: ParsedHolidayResult[]) => {
+    setSelectedDates((prev) => {
+      const next = new Set(prev);
+      visibleItems.forEach((it) => next.add(it.date));
+      return next;
+    });
+  };
+
+  const handleDeselectAll = (visibleItems: ParsedHolidayResult[]) => {
+    setSelectedDates((prev) => {
+      const next = new Set(prev);
+      visibleItems.forEach((it) => next.delete(it.date));
+      return next;
+    });
+  };
+
+  const handleDeleteItem = (date: string) => {
+    setItems((prev) => prev.filter((it) => it.date !== date));
+    setSelectedDates((prev) => {
+      const next = new Set(prev);
+      next.delete(date);
+      return next;
+    });
+  };
+
   const handleImport = async () => {
-    if (parsedHolidays.length === 0 && !parsedDoc?.semesterStartDate) return;
+    const holidaysToImport = items.filter((it) => selectedDates.has(it.date));
+    if (holidaysToImport.length === 0 && !parsedDoc?.semesterStartDate) return;
+
     setIsImporting(true);
     try {
-      // 1. Auto-sync detected semester dates and term name
+      // 1. Auto-sync detected semester duration and name
       if (parsedDoc?.semesterStartDate) {
         await attendanceApi.updateSemester({
           startDate: parsedDoc.semesterStartDate,
@@ -93,9 +146,9 @@ export default function HolidayParserModal({
         });
       }
 
-      // 3. Auto-sync all holidays
-      for (const h of parsedHolidays) {
-        await attendanceApi.addHoliday(h.date, h.label);
+      // 3. Auto-sync all selected holidays
+      for (const h of holidaysToImport) {
+        await attendanceApi.addHoliday(h.date, cleanHolidayDisplay(h.label));
       }
 
       onImported();
@@ -108,9 +161,24 @@ export default function HolidayParserModal({
     }
   };
 
+  // Filter items by active tab
+  const offDayItems = items.filter((it) => it.isOffDay === true);
+  const skippedItems = parsedDoc?.skippedSpecialDays || [];
+
+  let visibleList: ParsedHolidayResult[] = [];
+  if (activeTab === "off_days") {
+    visibleList = offDayItems;
+  } else if (activeTab === "skipped") {
+    visibleList = skippedItems;
+  } else {
+    visibleList = items;
+  }
+
+  const selectedCount = items.filter((it) => selectedDates.has(it.date)).length;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="w-full max-w-xl bg-[#1C1C1E] border border-white/10 rounded-3xl p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto space-y-5">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="w-full max-w-2xl bg-[#18181B] border border-white/10 rounded-3xl p-6 shadow-2xl relative max-h-[92vh] overflow-y-auto space-y-5">
         <button
           onClick={onClose}
           className="absolute right-5 top-5 p-1.5 rounded-full bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition-colors cursor-pointer"
@@ -118,16 +186,17 @@ export default function HolidayParserModal({
           <X size={18} />
         </button>
 
+        {/* Header */}
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-2xl bg-amber-500/15 border border-amber-500/25 flex items-center justify-center text-amber-400">
             <Palmtree size={20} />
           </div>
           <div>
-            <h3 className="text-lg font-bold text-white tracking-tight">
-              Scan Academic Calendar &amp; Holidays
+            <h3 className="text-lg font-extrabold text-white tracking-tight">
+              Smart Academic Notice &amp; Holiday Scanner
             </h3>
             <p className="text-xs text-[#8E8E93]">
-              Upload university holiday notice or academic circular (Image or PDF)
+              Intelligently filters gazetted holidays, strips table noise, and excludes non-holiday special days.
             </p>
           </div>
         </div>
@@ -140,7 +209,7 @@ export default function HolidayParserModal({
         )}
 
         {/* Upload Drop Zone */}
-        {parsedHolidays.length === 0 && !extracting && (
+        {items.length === 0 && !extracting && (
           <div
             onDragOver={(e) => e.preventDefault()}
             onDrop={handleFileDrop}
@@ -163,10 +232,10 @@ export default function HolidayParserModal({
             </div>
             <div>
               <p className="text-sm font-bold text-white">
-                Drag &amp; drop your holiday list PDF or photo here
+                Drag &amp; drop your holiday circular PDF or photo here
               </p>
               <p className="text-xs text-[#8E8E93] mt-1">
-                Reads dates, festival names, and semester break schedules automatically
+                Reads gazetted dates, handles restricted lists, removes numbering &amp; pipes automatically
               </p>
             </div>
           </div>
@@ -187,26 +256,47 @@ export default function HolidayParserModal({
         )}
 
         {/* Parsed Results Preview */}
-        {(parsedHolidays.length > 0 || parsedDoc?.semesterStartDate) && (
+        {(items.length > 0 || parsedDoc?.semesterStartDate) && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-2">
                 <CheckCircle2 size={16} className="text-emerald-400" />
                 <span className="text-xs font-bold text-white">
-                  Detected {parsedHolidays.length} Holidays {fileName && <span className="text-[#8E8E93] font-normal font-mono text-[10px]">({fileName})</span>}
+                  Found {items.length} Holidays {fileName && <span className="text-[#8E8E93] font-normal font-mono text-[10px]">({fileName})</span>}
                 </span>
+                {parsedDoc?.detectedYear && (
+                  <span className="px-2 py-0.5 rounded-md bg-white/10 text-amber-300 font-mono text-[10px] font-bold">
+                    Year {parsedDoc.detectedYear}
+                  </span>
+                )}
               </div>
               <button
                 onClick={() => {
                   setParsedDoc(null);
-                  setParsedHolidays([]);
+                  setItems([]);
+                  setSelectedDates(new Set());
                   setFileName(null);
                 }}
                 className="text-xs text-[#8E8E93] hover:text-white cursor-pointer"
               >
-                Scan Another
+                Scan Another Notice
               </button>
             </div>
+
+            {/* Smart Exclusion Notice (Schedule-IV Special Days) */}
+            {skippedItems.length > 0 && (
+              <div className="p-3 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-blue-300 text-xs flex items-start gap-2.5">
+                <Info size={16} className="shrink-0 text-blue-400 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-semibold text-white text-[11px]">
+                    Smart Filter Activated: Excluded {skippedItems.length} Special Celebration Days
+                  </p>
+                  <p className="text-[10px] text-blue-200/80 leading-relaxed">
+                    Notice states <em>"there would be no public holiday on these dates"</em> (e.g. Netaji Jayanti, Sant Ravidas Jayanti). Classes run normally, so they have been excluded to keep your attendance stats accurate.
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Auto-Detected Academic Settings Card */}
             {(parsedDoc?.semesterStartDate || parsedDoc?.defaultMinPercent || parsedDoc?.semesterName) && (
@@ -237,49 +327,185 @@ export default function HolidayParserModal({
                     </div>
                   )}
                 </div>
-                <p className="text-[10px] text-amber-300/80">
-                  ✓ Semester dates and attendance criteria will automatically sync to tracker settings on apply.
-                </p>
               </div>
             )}
 
-            <div className="max-h-56 overflow-y-auto space-y-2 pr-1">
-              {parsedHolidays.map((h, idx) => (
-                <div
-                  key={idx}
-                  className="p-3 rounded-2xl bg-white/[0.03] border border-white/5 flex items-center justify-between gap-3 text-xs"
+            {/* Filter Tabs & Bulk Select */}
+            <div className="flex items-center justify-between flex-wrap gap-2 pt-1 border-t border-white/[0.06]">
+              <div className="flex items-center gap-1.5 p-1 rounded-xl bg-white/5 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("off_days")}
+                  className={`px-3 py-1 rounded-lg font-semibold transition-colors cursor-pointer ${
+                    activeTab === "off_days"
+                      ? "bg-amber-500 text-black shadow-sm"
+                      : "text-white/70 hover:text-white"
+                  }`}
                 >
-                  <div>
-                    <p className="font-bold text-white">{h.label}</p>
-                    <p className="text-[11px] font-mono text-amber-400">{h.date}</p>
-                  </div>
-                  <span className="text-[10px] text-white/40 font-mono truncate max-w-[150px]">
-                    {h.rawLine}
-                  </span>
+                  Official Off-Days ({offDayItems.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("all")}
+                  className={`px-3 py-1 rounded-lg font-semibold transition-colors cursor-pointer ${
+                    activeTab === "all"
+                      ? "bg-white/15 text-white shadow-sm"
+                      : "text-white/70 hover:text-white"
+                  }`}
+                >
+                  All Detected ({items.length})
+                </button>
+                {skippedItems.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("skipped")}
+                    className={`px-3 py-1 rounded-lg font-semibold transition-colors cursor-pointer ${
+                      activeTab === "skipped"
+                        ? "bg-blue-500/30 text-blue-200 border border-blue-400/40"
+                        : "text-[#8E8E93] hover:text-white"
+                    }`}
+                  >
+                    Skipped Celebration Days ({skippedItems.length})
+                  </button>
+                )}
+              </div>
+
+              {activeTab !== "skipped" && (
+                <div className="flex items-center gap-2 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => handleSelectAll(visibleList)}
+                    className="text-[#0A84FF] hover:underline cursor-pointer font-medium"
+                  >
+                    Select All
+                  </button>
+                  <span className="text-white/20">|</span>
+                  <button
+                    type="button"
+                    onClick={() => handleDeselectAll(visibleList)}
+                    className="text-[#8E8E93] hover:text-white cursor-pointer font-medium"
+                  >
+                    Deselect All
+                  </button>
                 </div>
-              ))}
+              )}
             </div>
 
-            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-white/[0.08]">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/80 text-xs font-medium cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleImport}
-                disabled={isImporting}
-                className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-500/90 text-black text-xs font-bold transition-all shadow-lg shadow-amber-500/20 cursor-pointer disabled:opacity-50"
-              >
-                <Sparkles size={14} />
-                <span>
-                  {isImporting
-                    ? "Syncing Settings..."
-                    : `Sync Settings & Apply Calendar`}
-                </span>
-              </button>
+            {/* List of Holidays */}
+            <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+              {visibleList.map((h, idx) => {
+                const isChecked = selectedDates.has(h.date);
+                const isSkippedTab = activeTab === "skipped";
+
+                return (
+                  <div
+                    key={`${h.date}-${idx}`}
+                    className={`p-3 rounded-2xl border transition-all flex items-center justify-between gap-3 text-xs ${
+                      isChecked
+                        ? "bg-white/[0.04] border-white/10"
+                        : "bg-white/[0.01] border-white/5 opacity-70"
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      {!isSkippedTab && (
+                        <button
+                          type="button"
+                          onClick={() => toggleSelectDate(h.date)}
+                          className="text-white/70 hover:text-white transition-colors cursor-pointer shrink-0"
+                        >
+                          {isChecked ? (
+                            <CheckSquare size={16} className="text-amber-400" />
+                          ) : (
+                            <Square size={16} className="text-white/30" />
+                          )}
+                        </button>
+                      )}
+
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-bold text-white truncate text-sm">
+                            {cleanHolidayDisplay(h.label)}
+                          </p>
+
+                          {/* Category Badge */}
+                          {h.category === "gazetted" && (
+                            <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/25 text-emerald-300 text-[10px] font-semibold">
+                              Gazetted
+                            </span>
+                          )}
+                          {h.category === "observed_restricted" && (
+                            <span className="px-2 py-0.5 rounded-full bg-blue-500/15 border border-blue-500/25 text-blue-300 text-[10px] font-semibold">
+                              Observed Holiday
+                            </span>
+                          )}
+                          {h.category === "restricted" && (
+                            <span className="px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/25 text-amber-300 text-[10px] font-semibold">
+                              Restricted (RH)
+                            </span>
+                          )}
+                          {h.category === "weekend" && (
+                            <span className="px-2 py-0.5 rounded-full bg-white/10 text-[#8E8E93] text-[10px] font-semibold">
+                              Weekend
+                            </span>
+                          )}
+                          {h.category === "special_day" && (
+                            <span className="px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 text-[10px] font-semibold">
+                              Classes Held
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="font-mono text-amber-400 text-[11px] flex items-center gap-1">
+                            <Calendar size={11} /> {h.date}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {!isSkippedTab && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteItem(h.date)}
+                        className="p-1.5 rounded-lg text-white/30 hover:text-rose-400 hover:bg-white/5 transition-colors cursor-pointer shrink-0"
+                        title="Delete from import list"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Bottom Actions */}
+            <div className="flex items-center justify-between gap-3 pt-3 border-t border-white/[0.08]">
+              <span className="text-xs text-[#8E8E93]">
+                <strong className="text-white">{selectedCount}</strong> holidays selected for import
+              </span>
+
+              <div className="flex items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/80 text-xs font-semibold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleImport}
+                  disabled={isImporting || selectedCount === 0}
+                  className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-500/90 text-black text-xs font-bold transition-all shadow-lg shadow-amber-500/20 cursor-pointer disabled:opacity-50"
+                >
+                  <Sparkles size={14} />
+                  <span>
+                    {isImporting
+                      ? "Applying Calendar..."
+                      : `Import ${selectedCount} Holidays & Sync Settings`}
+                  </span>
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -287,3 +513,4 @@ export default function HolidayParserModal({
     </div>
   );
 }
+
