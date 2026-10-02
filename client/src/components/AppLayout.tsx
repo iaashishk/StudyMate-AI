@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Outlet, NavLink } from "react-router-dom";
+import { Outlet, NavLink, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,
   BookOpen,
@@ -13,6 +13,10 @@ import {
   User,
   CalendarCheck,
   Code2,
+  NotebookText,
+  ChevronUp,
+  X,
+  Menu,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import FocusPlayerModal from "./FocusPlayerModal";
@@ -25,26 +29,42 @@ const navItems = [
   { to: "/subjects", icon: BookOpen, label: "Curriculum & Hub" },
   { to: "/assignments", icon: FileText, label: "Assignments" },
   { to: "/lab-codes", icon: Code2, label: "Lab Codes" },
-  { to: "/notes", icon: BookOpen, label: "Cloud Notes" },
+  { to: "/notes", icon: NotebookText, label: "Cloud Notes" },
   { to: "/plan", icon: CalendarDays, label: "Smart Plan" },
   { to: "/insights", icon: Lightbulb, label: "AI Insights" },
   { to: "/analytics", icon: BarChart2, label: "Analytics" },
   { to: "/settings", icon: Settings, label: "Settings" },
 ];
 
-const mobileNavItems = [
+// Primary 5 in bottom bar — the most-used items
+const mobilePrimaryItems = [
   { to: "/", icon: LayoutDashboard, label: "Today" },
   { to: "/attendance", icon: CalendarCheck, label: "Attendance" },
-  { to: "/assignments", icon: FileText, label: "Assignments" },
-  { to: "/lab-codes", icon: Code2, label: "Labs" },
   { to: "/subjects", icon: BookOpen, label: "Subjects" },
-  { to: "/settings", icon: User, label: "Account" },
+  { to: "/assignments", icon: FileText, label: "Tasks" },
+  { to: "/notes", icon: NotebookText, label: "Notes" },
+];
+
+// "More" drawer items (all remaining)
+const mobileMoreItems = [
+  { to: "/lab-codes", icon: Code2, label: "Lab Codes" },
+  { to: "/plan", icon: CalendarDays, label: "Smart Plan" },
+  { to: "/insights", icon: Lightbulb, label: "AI Insights" },
+  { to: "/analytics", icon: BarChart2, label: "Analytics" },
+  { to: "/settings", icon: Settings, label: "Settings" },
 ];
 
 export default function AppLayout() {
   const { user } = useAuth();
+  const location = useLocation();
   const [focusModalOpen, setFocusModalOpen] = useState(false);
   const [tutorialOpen, setTutorialOpen] = useState(false);
+  const [moreDrawerOpen, setMoreDrawerOpen] = useState(false);
+
+  // Close "More" drawer whenever the route changes
+  useEffect(() => {
+    setMoreDrawerOpen(false);
+  }, [location.pathname]);
 
   // 🐼 Bubu secret message modal (triggered from Settings footer)
   const [bubuMessage, setBubuMessage] = useState(false);
@@ -269,29 +289,112 @@ export default function AppLayout() {
         <Outlet />
       </main>
 
-      {/* ── Mobile bottom nav ──────────────────────────────────────────── */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-[#0F0F0F]/96 backdrop-blur-xl flex justify-around items-center h-16 px-1 z-50 border-t border-white/[0.07] pb-[env(safe-area-inset-bottom)]">
-        {mobileNavItems.map(({ to, icon: Icon, label }) => (
+      {/* ── Mobile "More" Drawer Backdrop ──────────────────────────────── */}
+      {moreDrawerOpen && (
+        <div
+          className="md:hidden fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
+          onClick={() => setMoreDrawerOpen(false)}
+        />
+      )}
+
+      {/* ── Mobile "More" Slide-Up Drawer ──────────────────────────────── */}
+      <div
+        className={`md:hidden fixed bottom-16 left-0 right-0 z-50 bg-[#141414] border-t border-white/[0.10] rounded-t-3xl transition-transform duration-300 ease-out ${
+          moreDrawerOpen ? "translate-y-0" : "translate-y-full"
+        }`}
+      >
+        {/* Drag handle */}
+        <div className="flex justify-center pt-2.5 pb-1">
+          <div className="w-10 h-1 rounded-full bg-white/20" />
+        </div>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3 border-b border-white/[0.07]">
+          <span className="text-xs font-bold text-white">More</span>
+          <button
+            onClick={() => setMoreDrawerOpen(false)}
+            className="p-1.5 rounded-lg bg-white/5 text-white/60 hover:text-white cursor-pointer"
+          >
+            <X size={14} />
+          </button>
+        </div>
+
+        {/* Items grid */}
+        <div className="grid grid-cols-3 gap-2 p-4 pb-6">
+          {mobileMoreItems.map(({ to, icon: Icon, label }) => (
+            <NavLink
+              key={to}
+              to={to}
+              end={to === "/"}
+              className={({ isActive }) =>
+                `flex flex-col items-center justify-center gap-2 p-3.5 rounded-2xl text-[11px] font-semibold transition-colors cursor-pointer ${
+                  isActive
+                    ? "bg-[#0A84FF]/15 text-[#0A84FF] border border-[#0A84FF]/25"
+                    : "bg-white/[0.04] text-[#8E8E93] hover:text-white hover:bg-white/[0.08] border border-white/[0.06]"
+                }`
+              }
+            >
+              {({ isActive }) => (
+                <>
+                  <Icon size={20} strokeWidth={isActive ? 2.2 : 1.75} />
+                  <span className="text-center leading-tight">{label}</span>
+                </>
+              )}
+            </NavLink>
+          ))}
+
+          {/* Focus Session quick-launch in drawer */}
+          <button
+            onClick={() => { setMoreDrawerOpen(false); setFocusModalOpen(true); }}
+            className="flex flex-col items-center justify-center gap-2 p-3.5 rounded-2xl text-[11px] font-semibold bg-white/[0.04] text-[#8E8E93] hover:text-white hover:bg-white/[0.08] border border-white/[0.06] transition-colors cursor-pointer"
+          >
+            <Play size={20} strokeWidth={1.75} />
+            <span className="text-center leading-tight">Focus</span>
+          </button>
+
+          {/* Tutorial / Guide in drawer */}
+          <button
+            onClick={() => { setMoreDrawerOpen(false); setTutorialOpen(true); }}
+            className="flex flex-col items-center justify-center gap-2 p-3.5 rounded-2xl text-[11px] font-semibold bg-white/[0.04] text-[#8E8E93] hover:text-white hover:bg-white/[0.08] border border-white/[0.06] transition-colors cursor-pointer"
+          >
+            <HelpCircle size={20} strokeWidth={1.75} />
+            <span className="text-center leading-tight">Guide</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ── Mobile Bottom Nav (Primary 5 + More) ───────────────────────── */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-[#0F0F0F]/96 backdrop-blur-xl flex items-stretch h-16 px-1 z-50 border-t border-white/[0.07] pb-[env(safe-area-inset-bottom)]">
+        {mobilePrimaryItems.map(({ to, icon: Icon, label }) => (
           <NavLink
             key={to}
             to={to}
             end={to === "/"}
             className={({ isActive }) =>
-              `flex flex-col items-center justify-center gap-1 py-1 px-3 rounded-xl text-[10px] font-medium transition-colors ${
-                isActive
-                  ? "text-[#0A84FF]"
-                  : "text-[#8E8E93] hover:text-white"
+              `flex flex-col items-center justify-center gap-1 py-1 flex-1 text-[10px] font-medium transition-colors ${
+                isActive ? "text-[#0A84FF]" : "text-[#8E8E93] hover:text-white"
               }`
             }
           >
             {({ isActive }) => (
               <>
                 <Icon size={18} strokeWidth={isActive ? 2.2 : 1.75} />
-                <span className="truncate max-w-[56px]">{label}</span>
+                <span className="truncate max-w-[52px]">{label}</span>
               </>
             )}
           </NavLink>
         ))}
+
+        {/* "More" button */}
+        <button
+          onClick={() => setMoreDrawerOpen((v) => !v)}
+          className={`flex flex-col items-center justify-center gap-1 py-1 flex-1 text-[10px] font-medium transition-colors cursor-pointer ${
+            moreDrawerOpen ? "text-[#0A84FF]" : "text-[#8E8E93] hover:text-white"
+          }`}
+        >
+          {moreDrawerOpen ? <ChevronUp size={18} strokeWidth={2.2} /> : <Menu size={18} strokeWidth={1.75} />}
+          <span>{moreDrawerOpen ? "Close" : "More"}</span>
+        </button>
       </nav>
 
       {/* Focus Player Modal */}

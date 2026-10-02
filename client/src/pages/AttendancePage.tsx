@@ -9,6 +9,7 @@ import {
   Settings2,
   CalendarCheck,
   Palmtree,
+  Brain,
 } from "lucide-react";
 import TodayTab from "../components/attendance/TodayTab";
 import SubjectsTab from "../components/attendance/SubjectsTab";
@@ -18,11 +19,12 @@ import BunkPlannerTab from "../components/attendance/BunkPlannerTab";
 import BackfillTab from "../components/attendance/BackfillTab";
 import ReportsTab from "../components/attendance/ReportsTab";
 import AttendanceSettingsModal from "../components/attendance/AttendanceSettingsModal";
+import SemesterBrainPanel from "../components/attendance/SemesterBrainPanel";
 import { attendanceApi } from "../lib/attendance-api";
 
 export default function AttendancePage() {
   const [activeTab, setActiveTab] = useState<
-    "today" | "subjects" | "timetable" | "holidays" | "planner" | "backfill" | "reports"
+    "today" | "subjects" | "timetable" | "holidays" | "planner" | "backfill" | "reports" | "brain"
   >("today");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
@@ -42,6 +44,7 @@ export default function AttendancePage() {
 
   const tabs = [
     { id: "today", label: "Today", icon: LayoutDashboard },
+    { id: "brain", label: "Academic Brain", icon: Brain },
     { id: "subjects", label: "Subjects & Bunks", icon: BookOpen },
     { id: "timetable", label: "Weekly Timetable", icon: CalendarDays },
     { id: "holidays", label: "Holiday Calendar", icon: Palmtree },
@@ -93,13 +96,18 @@ export default function AttendancePage() {
       <div className="flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-none border-b border-white/[0.08]">
         {tabs.map(({ id, label, icon: Icon }) => {
           const isActive = activeTab === id;
+          const isBrain = id === "brain";
           return (
             <button
               key={id}
               onClick={() => setActiveTab(id as any)}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
                 isActive
-                  ? "bg-[#0A84FF] text-white shadow-lg shadow-[#0A84FF]/20"
+                  ? isBrain
+                    ? "bg-purple-500 text-white shadow-lg shadow-purple-500/20"
+                    : "bg-[#0A84FF] text-white shadow-lg shadow-[#0A84FF]/20"
+                  : isBrain
+                  ? "text-purple-400 hover:text-white hover:bg-purple-500/10"
                   : "text-[#8E8E93] hover:text-white hover:bg-white/5"
               }`}
             >
@@ -118,6 +126,18 @@ export default function AttendancePage() {
         <TodayTab
           onNavigateTab={(tab) => setActiveTab(tab as any)}
           pendingCount={pendingCount}
+        />
+      )}
+
+      {activeTab === "brain" && (
+        <SemesterBrainPanel
+          onNavigateTab={(tab) => {
+            if (tab === "settings") {
+              setIsSettingsOpen(true);
+            } else {
+              setActiveTab(tab as any);
+            }
+          }}
         />
       )}
 

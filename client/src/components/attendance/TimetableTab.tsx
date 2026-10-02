@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   CalendarDays,
   Save,
@@ -36,6 +36,40 @@ const DEFAULT_TIMES = [
   { start: "14:00", end: "15:00" },
   { start: "15:00", end: "16:00" },
 ];
+
+/** Compact time display that shows "09:30" cleanly and opens a native picker on click. */
+function TimeInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const ref = useRef<HTMLInputElement>(null);
+
+  // Format "09:30" or "9:30" -> "09:30"
+  const display = (() => {
+    if (!value) return "--:--";
+    const [h, m] = value.split(":");
+    return `${String(h || "0").padStart(2, "0")}:${String(m || "0").padStart(2, "0")}`;
+  })();
+
+  return (
+    <span
+      className="relative inline-flex items-center cursor-pointer group"
+      title="Click to edit time"
+    >
+      <span
+        onClick={() => ref.current?.showPicker?.() ?? ref.current?.click()}
+        className="text-white/80 group-hover:text-[#0A84FF] transition-colors text-[10px] font-mono font-semibold px-1 py-0.5 rounded hover:bg-white/8"
+      >
+        {display}
+      </span>
+      <input
+        ref={ref}
+        type="time"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="absolute opacity-0 w-0 h-0 pointer-events-none"
+        tabIndex={-1}
+      />
+    </span>
+  );
+}
 
 export default function TimetableTab() {
   const getTodayStr = () => {
@@ -399,26 +433,16 @@ export default function TimetableTab() {
                           } ${isDimmed ? "opacity-25" : "opacity-100"}`}
                         >
                           {/* Time Header */}
-                          <div className="flex items-center justify-between gap-1 text-[10px] text-[#8E8E93] font-mono">
-                            <div className="flex items-center gap-0.5">
-                              <input
-                                type="time"
-                                value={slot.startTime}
-                                onChange={(e) =>
-                                  updateSlot(wd.day, slotIdx, { startTime: e.target.value })
-                                }
-                                className="w-13 bg-transparent text-white/90 focus:outline-none"
-                              />
-                              <span>–</span>
-                              <input
-                                type="time"
-                                value={slot.endTime}
-                                onChange={(e) =>
-                                  updateSlot(wd.day, slotIdx, { endTime: e.target.value })
-                                }
-                                className="w-13 bg-transparent text-white/90 focus:outline-none"
-                              />
-                            </div>
+                          <div className="flex items-center gap-1 text-[10px] font-mono">
+                            <TimeInput
+                              value={slot.startTime}
+                              onChange={(v) => updateSlot(wd.day, slotIdx, { startTime: v })}
+                            />
+                            <span className="text-white/30">–</span>
+                            <TimeInput
+                              value={slot.endTime}
+                              onChange={(v) => updateSlot(wd.day, slotIdx, { endTime: v })}
+                            />
                           </div>
 
                           {/* Subject Picker */}

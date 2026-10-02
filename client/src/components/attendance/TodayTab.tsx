@@ -52,6 +52,8 @@ export default function TodayTab({ onNavigateTab, pendingCount }: TodayTabProps)
   } | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [holidayDialogOpen, setHolidayDialogOpen] = useState(false);
+  const [holidayLabel, setHolidayLabel] = useState("");
 
   const showUndoToast = (
     msg: string,
@@ -198,20 +200,48 @@ export default function TodayTab({ onNavigateTab, pendingCount }: TodayTabProps)
     }
   };
 
-  // Toggle Day as Holiday
-  const handleHoliday = async () => {
-    const label = prompt(
-      "Enter holiday reason (e.g. Diwali Break, College Fest, Sports Day):",
-      "Academic Holiday"
-    );
-    if (!label) return;
+  // Open Holiday Dialog
+  const handleHoliday = () => {
+    setHolidayLabel("");
+    setHolidayDialogOpen(true);
+  };
+
+  // Confirm Holiday: mark day + auto-cancel all sessions
+  const handleConfirmHoliday = async () => {
+    const label = holidayLabel.trim() || "Academic Holiday";
+    setHolidayDialogOpen(false);
     setActionLoading(true);
     try {
+      // 1. Mark the day as a holiday in the calendar
       await attendanceApi.markDayHoliday(currentDate, label);
-      showUndoToast(`Marked ${currentDate} as holiday`);
+
+      // 2. Auto-cancel all scheduled sessions for this day (holiday sync)
+      if (data && data.sessions.length > 0) {
+        const cancellable = data.sessions.filter(
+          (s) => s.subjectId && s.status !== "cancelled"
+        );
+        await Promise.all(
+          cancellable.map((s) =>
+            attendanceApi.markAttendance({
+              date: currentDate,
+              slotId: s.slotId,
+              subjectId: s.subjectId!,
+              status: "cancelled",
+              notes: `Holiday: ${label}`,
+            })
+          )
+        );
+        showUndoToast(
+          `"${label}" set — ${cancellable.length} class${cancellable.length !== 1 ? "es" : ""} auto-cancelled ✓`
+        );
+      } else {
+        showUndoToast(`Marked ${currentDate} as "${label}"`);
+      }
+
       await loadDay(currentDate);
     } catch (err) {
       console.error("Holiday mark failed", err);
+      showUndoToast("Failed to mark holiday.");
     } finally {
       setActionLoading(false);
     }
@@ -621,6 +651,52 @@ export default function TodayTab({ onNavigateTab, pendingCount }: TodayTabProps)
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* ── Holiday Dialog Modal ──────────────────────────────────────────── */}
+      {holidayDialogOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="w-full max-w-sm bg-[#1C1C1E] border border-white/10 rounded-3xl p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-2xl bg-amber-500/15 border border-amber-500/25 flex items-center justify-center text-amber-400 text-lg">
+                🌴
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white">Mark Day as Holiday</h3>
+                <p className="text-[11px] text-[#8E8E93]">{dayName} — all classes will be auto-cancelled</p>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-[11px] text-[#8E8E93] font-medium">Holiday Name / Reason</label>
+              <input
+                type="text"
+                value={holidayLabel}
+                onChange={(e) => setHolidayLabel(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleConfirmHoliday()}
+                placeholder="e.g. Diwali Break, College Fest, Bandh..."
+                className="w-full px-3 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-amber-400 transition-colors"
+                autoFocus
+              />
+              <p className="text-[10px] text-white/30">Leave blank to use "Academic Holiday"</p>
+            </div>
+
+            <div className="flex items-center gap-2.5 pt-1">
+              <button
+                onClick={() => setHolidayDialogOpen(false)}
+                className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/80 text-xs font-semibold cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmHoliday}
+                className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold cursor-pointer transition-colors"
+              >
+                🌴 Mark Holiday & Cancel Classes
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

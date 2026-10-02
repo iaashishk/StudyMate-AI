@@ -30,6 +30,15 @@ export interface ParsedHolidayResult {
   dayOfWeek?: string;
 }
 
+/** One column variant from a multi-column academic calendar (e.g. 1st Sem vs 3rd–7th Sem) */
+export interface SemesterDateVariant {
+  label: string;        // e.g. "All UG & PG 1st Sem (Fresh Batch)"
+  shortLabel: string;   // e.g. "1st Sem"
+  startDate: string;    // YYYY-MM-DD
+  endDate?: string;     // YYYY-MM-DD
+  teachingDays?: number;
+}
+
 export interface ParsedAcademicDocResult {
   holidays: ParsedHolidayResult[]; // Official off-days by default (Gazetted + Observed Restricted)
   allExtractedItems: ParsedHolidayResult[]; // All items detected
@@ -39,6 +48,8 @@ export interface ParsedAcademicDocResult {
   defaultMinPercent?: number;
   semesterName?: string;
   detectedYear?: number;
+  /** Present when the calendar has multiple columns (e.g. 1st sem vs 3rd–7th sem) */
+  semesterDateVariants?: SemesterDateVariant[];
 }
 
 const KNOWN_FESTIVALS = [
@@ -225,7 +236,6 @@ function isNoiseOrSignatoryLine(line: string): boolean {
     "vice-chancellor",
     "establishment branch",
     "establishment",
-    "notification",
     "dated:",
     "dated :",
     "endst. no",
@@ -244,11 +254,12 @@ function isNoiseOrSignatoryLine(line: string): boolean {
     "haryana state",
     "government of haryana",
     "chandigarh",
-    "faridabad",
     "signature",
     "sd/-",
     "sd/",
     "order of the",
+    // Note: "notification" intentionally excluded — it's the circular's own header
+    // Note: "faridabad" excluded — appears in uni address but also in holiday text
   ];
   return noiseMarkers.some((marker) => l.includes(marker));
 }
@@ -269,6 +280,32 @@ export function parseAcademicDocFromText(
     };
   }
 
+  // ── Detect if this is an ACADEMIC CALENDAR (schedule/exam timetable) ───────
+  // Academic calendars have semester dates, exam periods — NOT holiday lists.
+  // Holiday circulars use "Gazetted", "Schedule-I", "Restricted" keywords.
+  const upperText = rawText.toUpperCase();
+  const isAcademicCalendar =
+    (upperText.includes("TEACHING TERM") ||
+      upperText.includes("TEACHING PERIOD") ||
+      upperText.includes("CLASS TEST") ||
+      upperText.includes("PREPARATORY LEAVE") ||
+      upperText.includes("PREPARATORY LEAVES") ||
+      upperText.includes("END-TERM EXAM") ||
+      upperText.includes("END TERM EXAM") ||
+      upperText.includes("END-TERM PRACTICAL") ||
+      upperText.includes("END TERM PRACTICAL") ||
+      upperText.includes("END SEMESTER EXAM") ||
+      upperText.includes("WINTER VACATION") ||
+      upperText.includes("SUMMER VACATION") ||
+      upperText.includes("MID-SEMESTER") ||
+      upperText.includes("MIDSEMESTER") ||
+      upperText.includes("COMMENCEMENT OF NEXT SEMESTER") ||
+      upperText.includes("ACADEMIC CALENDAR")) &&
+    !upperText.includes("GAZETTED") &&
+    !upperText.includes("SCHEDULE-I") &&
+    !upperText.includes("SCHEDULE I") &&
+    !upperText.includes("RESTRICTED HOLIDAY");
+
   // Detect dominant calendar year in circular (e.g. 2026)
   let detectedYear = fallbackYear;
   const yearMatch =
@@ -278,10 +315,184 @@ export function parseAcademicDocFromText(
     detectedYear = parseInt(yearMatch[1], 10);
   }
 
+  // ── For Academic Calendar docs: extract semester dates only, NO holiday entries ─
+  if (isAcademicCalendar) {
+    let semesterStartDate: string | undefined;
+    let semesterEndDate: string | undefined;
+    let semesterName: string | undefined;
+    let defaultMinPercent: number | undefined;
+    const semesterDateVariants: SemesterDateVariant[] = [];
+
+    const attendancePctMatch =
+      rawText.match(/(?:minimum|mandatory|compulsory|required)?\s*attendance(?:\s*(?:is|requirement|criteria|of))?\s*[:\-]?\s*(\d{2})%/i) ||
+      rawText.match(/\b([6789]\d)%\s*(?:minimum\s*)?attendance\b/i);
+    if (attendancePctMatch) {
+      const pct = parseInt(attendancePctMatch[1], 10);
+      if (pct >= 50 && pct <= 95) defaultMinPercent = pct;
+    }
+
+    const semNameMatch =
+      rawText.match(/\b((?:odd|even|monsoon|spring|winter|autumn|summer)\s*semester\s*(?:\d{4}[-–]\d{2,4})?)/i) ||
+      rawText.match(/\b(academic\s*session\s*\d{4}[-–]\d{2,4})/i) ||
+      rawText.match(/ACADEMIC CALENDAR\s*\(([^)]+)\)/i);
+    if (semNameMatch) {
+      semesterName = semNameMatch[1]
+        .split(" ")
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+        .join(" ");
+    }
+
+    // ── Detect column headers in the document ───────────────────────────
+    // YMCA-style: "UG & PG 3rd, 5th & 7th Sem" | "All UG & PG 1st Sem."
+    // We infer column roles from the full document text
+
+    // Regex to extract ALL date ranges from a single line
+    const ALL_RANGES_RE = /(\d{1,2}[./]\d{1,2}[./]\d{2,4})\s*(?:to|-|–)\s*(\d{1,2}[./]\d{1,2}[./]\d{2,4})/gi;
+
+    let col0Label = "UG & PG 3rd, 5th & 7th Sem (Senior Batches)";
+    let col0Short = "3rd–7th Sem";
+    let col1Label = "All UG & PG 1st Sem (MCA, M.Tech, B.Tech Fresh Batch)";
+    let col1Short = "1st Sem (Fresh Batch)";
+
+    const upperFull = rawText.toUpperCase();
+    if (upperFull.includes("1ST SEM") || upperFull.includes("FIRST SEM") || upperFull.includes("FIRST YEAR")) {
+      col1Label = "All UG & PG 1st Sem (MCA, M.Tech, B.Tech, M.Sc)";
+      col1Short = "1st Sem (MCA/PG/UG)";
+    }
+    if (upperFull.includes("3RD") && upperFull.includes("5TH")) {
+      col0Label = "UG & PG 3rd, 5th & 7th Sem (incl. B.Tech)";
+      col0Short = "3rd/5th/7th Sem";
+    }
+
+    const acLines = rawText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+
+    for (const line of acLines) {
+      const lower = line.toLowerCase();
+      const isTermLine =
+        lower.includes("teaching term") ||
+        lower.includes("term-i") ||
+        lower.includes("term i") ||
+        lower.includes("term-ii") ||
+        lower.includes("term ii") ||
+        (lower.includes("term") && lower.includes("teaching"));
+
+      if (isTermLine) {
+        const allRanges: Array<{ start: string; end: string; teachingDays?: number }> = [];
+        let m: RegExpExecArray | null;
+        ALL_RANGES_RE.lastIndex = 0;
+
+        const dayCountMatches = [...line.matchAll(/\b(\d{2,3})\s*(?:days?)?\b/g)]
+          .map((dm) => parseInt(dm[1], 10))
+          .filter((n) => n >= 10 && n <= 200);
+
+        while ((m = ALL_RANGES_RE.exec(line)) !== null) {
+          const d1 = extractDateFromSnippet(m[1], detectedYear);
+          const d2 = extractDateFromSnippet(m[2], detectedYear);
+          if (d1 && d2 && d1 < d2) {
+            allRanges.push({ start: d1, end: d2 });
+          }
+        }
+
+        if (allRanges.length > 0) {
+          if (semesterDateVariants.length === 0) {
+            // First Teaching Term (Teaching Term-I): initialize variants
+            if (allRanges.length === 1) {
+              semesterDateVariants.push({
+                label: "This Semester",
+                shortLabel: "Semester",
+                startDate: allRanges[0].start,
+                endDate: allRanges[0].end,
+                teachingDays: dayCountMatches[0],
+              });
+            } else {
+              const labels = [
+                { label: col0Label, shortLabel: col0Short },
+                { label: col1Label, shortLabel: col1Short },
+              ];
+              allRanges.forEach((range, i) => {
+                const lbl = labels[i] || { label: `Option ${i + 1}`, shortLabel: `Option ${i + 1}` };
+                semesterDateVariants.push({
+                  label: lbl.label,
+                  shortLabel: lbl.shortLabel,
+                  startDate: range.start,
+                  endDate: range.end,
+                  teachingDays: dayCountMatches[i],
+                });
+              });
+            }
+          } else {
+            // Subsequent Teaching Term (e.g. Teaching Term-II): extend the tentative end date
+            allRanges.forEach((range, i) => {
+              if (semesterDateVariants[i]) {
+                if (!semesterDateVariants[i].endDate || range.end > semesterDateVariants[i].endDate!) {
+                  semesterDateVariants[i].endDate = range.end;
+                }
+                if (dayCountMatches[i] && semesterDateVariants[i].teachingDays) {
+                  semesterDateVariants[i].teachingDays! += dayCountMatches[i];
+                }
+              }
+            });
+          }
+        }
+        continue;
+      }
+
+      // Check for exam / semester conclusion markers (End-Term, Preparatory, Last day of teaching)
+      const isExamOrEnd =
+        lower.includes("preparatory leave") ||
+        lower.includes("end-term") ||
+        lower.includes("end term") ||
+        lower.includes("theory examination") ||
+        lower.includes("last day of teaching");
+
+      if (isExamOrEnd && semesterDateVariants.length > 0) {
+        const dateRegex = /\b(\d{1,2}[./]\d{1,2}[./]\d{2,4})\b/g;
+        const lineDates = [...line.matchAll(dateRegex)]
+          .map((dm) => extractDateFromSnippet(dm[1], detectedYear))
+          .filter((d): d is string => !!d);
+
+        if (lineDates.length >= 4 && semesterDateVariants.length >= 2) {
+          // Two date ranges on this row: Col 0 end = lineDates[1], Col 1 end = lineDates[3]
+          if (lineDates[1] > (semesterDateVariants[0].endDate || "")) semesterDateVariants[0].endDate = lineDates[1];
+          if (lineDates[3] > (semesterDateVariants[1].endDate || "")) semesterDateVariants[1].endDate = lineDates[3];
+        } else if (lineDates.length >= 2 && semesterDateVariants.length >= 2) {
+          // Two dates: Col 0 date = lineDates[0], Col 1 date = lineDates[1]
+          if (lineDates[0] > (semesterDateVariants[0].endDate || "")) semesterDateVariants[0].endDate = lineDates[0];
+          if (lineDates[1] > (semesterDateVariants[1].endDate || "")) semesterDateVariants[1].endDate = lineDates[1];
+        } else if (lineDates.length === 1 && semesterDateVariants.length > 0) {
+          for (const v of semesterDateVariants) {
+            if (!v.endDate || lineDates[0] > v.endDate) {
+              v.endDate = lineDates[0];
+            }
+          }
+        }
+      }
+    }
+
+    // Default top-level dates for backward compatibility
+    if (semesterDateVariants.length > 0) {
+      semesterStartDate = semesterDateVariants[0].startDate;
+      semesterEndDate = semesterDateVariants[0].endDate;
+    }
+
+    return {
+      holidays: [],
+      allExtractedItems: [],
+      skippedSpecialDays: [],
+      semesterStartDate,
+      semesterEndDate,
+      defaultMinPercent,
+      semesterName,
+      detectedYear,
+      semesterDateVariants: semesterDateVariants.length > 1 ? semesterDateVariants : undefined,
+    };
+  }
+
   const lines = rawText
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter((l) => l.length > 0);
+
 
   const allExtractedItems: ParsedHolidayResult[] = [];
   const skippedSpecialDays: ParsedHolidayResult[] = [];
@@ -377,9 +588,11 @@ export function parseAcademicDocFromText(
 
     if (
       (/OBSERVED\s*AS\s*HOLIDAYS/i.test(line) && /RESTRICTED/i.test(line)) ||
-      /ON\s*ACCOUNT\s*OF\s*RESTRICTED/i.test(line)
+      /ON\s*ACCOUNT\s*OF\s*RESTRICTED/i.test(line) ||
+      /FOLLOWING\s*THREE\s*DAYS\s*SHALL\s*BE\s*OBSERVED/i.test(line)
     ) {
       currentSection = "OBSERVED_RESTRICTED";
+      continue; // Don't parse the header line as a holiday entry
     } else if (
       /\bSCHEDULE[- ]*II\b/i.test(line) ||
       /RESTRICTED\s*HOLIDAYS?/i.test(line)
@@ -388,7 +601,8 @@ export function parseAcademicDocFromText(
       continue;
     } else if (
       /FALLS?\s*ON\s*SATURDAYS?\s*(?:\/|AND)?\s*SUNDAYS?/i.test(line) ||
-      /WEEKEND\s*HOLIDAYS?/i.test(line)
+      /WEEKEND\s*HOLIDAYS?/i.test(line) ||
+      /ADMISSIBLE\s*TO\s*THOSE\s*NORMALLY\s*WORK/i.test(line)
     ) {
       currentSection = "WEEKEND";
       continue;
@@ -406,26 +620,49 @@ export function parseAcademicDocFromText(
       continue;
     }
 
-    // Check for inline lists, e.g. "April 03 (Good Friday), May 01 (Buddha Purnima)"
+    // ── Inline list detection ────────────────────────────────────────────
+    // Handles formats like:
+    //   "April 03, 2026 (Good Friday)"     ← with year
+    //   "April 03 (Good Friday)"           ← without year
+    //   "April 03, 2026 (Good Friday), May 01, 2026 (Buddha Purnima)"  ← multiple
     const inlineMatches = [
-      ...line.matchAll(/\b([a-z]{3,9})\s+(\d{1,2})\s*\(([^)]+)\)/gi),
+      // With optional ", YYYY" after the day number
+      ...line.matchAll(/\b([a-z]{3,9})\s+(\d{1,2})(?:\s*,\s*\d{4})?\s*\(([^)]+)\)/gi),
     ];
     if (inlineMatches.length > 0) {
       for (const m of inlineMatches) {
         const monthName = m[1].toLowerCase();
         const day = parseInt(m[2], 10);
-        const festName = m[3];
+        const festName = m[3].trim();
         const mNum = MONTH_MAP[monthName];
         if (mNum && day >= 1 && day <= 31) {
           const dateStr = `${detectedYear}-${String(mNum).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
           const cleanLabel = cleanHolidayLabel(festName, dateStr);
+
+          // OBSERVED_RESTRICTED can override a prior RESTRICTED entry for same date
+          if (currentSection === "OBSERVED_RESTRICTED" && seenDates.has(dateStr)) {
+            const existingIdx = allExtractedItems.findIndex((it) => it.date === dateStr);
+            if (existingIdx >= 0 && allExtractedItems[existingIdx].category === "restricted") {
+              // Upgrade: restricted → observed_restricted (it IS an off-day)
+              allExtractedItems[existingIdx] = {
+                ...allExtractedItems[existingIdx],
+                label: cleanLabel,
+                category: "observed_restricted",
+                categoryLabel: "Observed Holiday (RH)",
+                isOffDay: true,
+              };
+            }
+            continue;
+          }
+
           if (!seenDates.has(dateStr)) {
             seenDates.add(dateStr);
+            const cat = currentSection === "OBSERVED_RESTRICTED" ? "observed_restricted" : "gazetted";
             allExtractedItems.push({
               date: dateStr,
               label: cleanLabel,
-              category: "observed_restricted",
-              categoryLabel: "Observed Holiday (RH)",
+              category: cat,
+              categoryLabel: cat === "observed_restricted" ? "Observed Holiday (RH)" : "Gazetted Holiday",
               isOffDay: true,
               rawLine: line,
             });
@@ -456,6 +693,24 @@ export function parseAcademicDocFromText(
         rawLine: line,
       });
       continue; // Exclude from real holidays!
+    }
+
+    // OBSERVED_RESTRICTED can override a prior RESTRICTED entry for the same date
+    if (currentSection === "OBSERVED_RESTRICTED" && seenDates.has(detectedDateStr)) {
+      const existingIdx = allExtractedItems.findIndex((it) => it.date === detectedDateStr);
+      if (existingIdx >= 0 && allExtractedItems[existingIdx].category === "restricted") {
+        const cleanLabel = cleanHolidayLabel(line, detectedDateStr);
+        if (cleanLabel.length >= 3) {
+          allExtractedItems[existingIdx] = {
+            ...allExtractedItems[existingIdx],
+            label: cleanLabel,
+            category: "observed_restricted",
+            categoryLabel: "Observed Holiday (RH)",
+            isOffDay: true,
+          };
+        }
+      }
+      continue;
     }
 
     if (seenDates.has(detectedDateStr)) continue;

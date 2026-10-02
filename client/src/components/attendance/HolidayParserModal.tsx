@@ -39,6 +39,7 @@ export default function HolidayParserModal({
   const [items, setItems] = useState<ParsedHolidayResult[]>([]);
   const [selectedDates, setSelectedDates] = useState<Set<string>>(new Set());
   const [activeTab, setActiveTab] = useState<"off_days" | "all" | "skipped">("off_days");
+  const [selectedVariantIndex, setSelectedVariantIndex] = useState<number>(0);
   const [isImporting, setIsImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -78,6 +79,9 @@ export default function HolidayParserModal({
         setError(
           "We read the file, but could not detect holiday dates. Ensure the circular has clear dates like '26 January' or '05/01/2026'."
         );
+      } else if (allItems.length === 0 && doc.semesterStartDate) {
+        // Academic calendar doc — only semester dates were extracted, no holidays
+        setError(null); // Not an error, but let the semesterStartDate card show
       }
     } catch (err: unknown) {
       console.error("Extraction error", err);
@@ -130,12 +134,23 @@ export default function HolidayParserModal({
 
     setIsImporting(true);
     try {
+      const chosenVariant =
+        parsedDoc?.semesterDateVariants && parsedDoc.semesterDateVariants[selectedVariantIndex]
+          ? parsedDoc.semesterDateVariants[selectedVariantIndex]
+          : null;
+
+      const effectiveStartDate = chosenVariant ? chosenVariant.startDate : parsedDoc?.semesterStartDate;
+      const effectiveEndDate = chosenVariant ? chosenVariant.endDate : parsedDoc?.semesterEndDate;
+      const semesterDisplayName = chosenVariant
+        ? `${parsedDoc?.semesterName || "Semester"} - ${chosenVariant.shortLabel}`
+        : parsedDoc?.semesterName;
+
       // 1. Auto-sync detected semester duration and name
-      if (parsedDoc?.semesterStartDate) {
+      if (effectiveStartDate) {
         await attendanceApi.updateSemester({
-          startDate: parsedDoc.semesterStartDate,
-          endDate: parsedDoc.semesterEndDate || undefined,
-          name: parsedDoc.semesterName || undefined,
+          startDate: effectiveStartDate,
+          endDate: effectiveEndDate || undefined,
+          name: semesterDisplayName || undefined,
         });
       }
 
@@ -262,7 +277,10 @@ export default function HolidayParserModal({
               <div className="flex items-center gap-2">
                 <CheckCircle2 size={16} className="text-emerald-400" />
                 <span className="text-xs font-bold text-white">
-                  Found {items.length} Holidays {fileName && <span className="text-[#8E8E93] font-normal font-mono text-[10px]">({fileName})</span>}
+                  {items.length === 0
+                    ? "Academic Calendar Detected"
+                    : `Found ${items.length} Holidays`}{" "}
+                  {fileName && <span className="text-[#8E8E93] font-normal font-mono text-[10px]">({fileName})</span>}
                 </span>
                 {parsedDoc?.detectedYear && (
                   <span className="px-2 py-0.5 rounded-md bg-white/10 text-amber-300 font-mono text-[10px] font-bold">
@@ -275,6 +293,7 @@ export default function HolidayParserModal({
                   setParsedDoc(null);
                   setItems([]);
                   setSelectedDates(new Set());
+                  setSelectedVariantIndex(0);
                   setFileName(null);
                 }}
                 className="text-xs text-[#8E8E93] hover:text-white cursor-pointer"
@@ -282,6 +301,21 @@ export default function HolidayParserModal({
                 Scan Another Notice
               </button>
             </div>
+
+            {/* Academic Calendar Notice */}
+            {items.length === 0 && parsedDoc?.semesterStartDate && (
+              <div className="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs flex items-start gap-2.5">
+                <Info size={16} className="shrink-0 text-emerald-400 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-semibold text-white text-[11px]">
+                    Academic Calendar Detected — Semester Dates Extracted
+                  </p>
+                  <p className="text-[10px] text-emerald-200/80 leading-relaxed">
+                    This looks like a Teaching Calendar / Academic Schedule (with Teaching Terms, Class Tests, Exam dates). No holidays are listed in this document — only semester date range has been extracted. To import holidays, upload your university&apos;s Holiday Circular instead.
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Smart Exclusion Notice (Schedule-IV Special Days) */}
             {skippedItems.length > 0 && (
@@ -300,20 +334,78 @@ export default function HolidayParserModal({
 
             {/* Auto-Detected Academic Settings Card */}
             {(parsedDoc?.semesterStartDate || parsedDoc?.defaultMinPercent || parsedDoc?.semesterName) && (
-              <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/25 space-y-2">
-                <div className="flex items-center gap-2 text-xs font-bold text-amber-400">
-                  <Sparkles size={14} />
-                  <span>Auto-Detected Academic Settings &amp; Span</span>
+              <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/25 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs font-bold text-amber-400">
+                    <Sparkles size={14} />
+                    <span>Auto-Detected Academic Settings &amp; Span</span>
+                  </div>
+                  {parsedDoc?.semesterDateVariants && parsedDoc.semesterDateVariants.length > 1 && (
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/30">
+                      Multi-Cohort Detected
+                    </span>
+                  )}
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
-                  {parsedDoc?.semesterStartDate && (
-                    <div className="bg-white/5 p-2 rounded-xl border border-white/5">
-                      <span className="text-[#8E8E93] block text-[10px]">Semester Duration</span>
-                      <span className="font-mono text-white font-semibold">
-                        {parsedDoc.semesterStartDate} {parsedDoc.semesterEndDate ? `→ ${parsedDoc.semesterEndDate}` : ""}
+
+                {/* Cohort Selector (e.g. 1st Sem MCA/PG vs 3rd-7th Sem Senior) */}
+                {parsedDoc?.semesterDateVariants && parsedDoc.semesterDateVariants.length > 1 && (
+                  <div className="space-y-1.5 p-2.5 rounded-xl bg-black/25 border border-white/5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-white/90 font-bold block">
+                        Select Your Semester / Batch:
+                      </span>
+                      <span className="text-[9px] text-amber-300/80">
+                        Tap your batch to sync dates
                       </span>
                     </div>
-                  )}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {parsedDoc.semesterDateVariants.map((v, i) => {
+                        const isSelected = selectedVariantIndex === i;
+                        return (
+                          <button
+                            key={i}
+                            type="button"
+                            onClick={() => setSelectedVariantIndex(i)}
+                            className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                              isSelected
+                                ? "bg-amber-500/25 border-amber-400 text-white shadow-md shadow-amber-500/10 ring-1 ring-amber-400"
+                                : "bg-white/[0.03] border-white/10 text-white/70 hover:bg-white/[0.06]"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="font-bold text-xs text-white truncate">{v.shortLabel}</span>
+                              {isSelected && (
+                                <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full bg-amber-400 text-black shrink-0">
+                                  ACTIVE
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-[#8E8E93] mt-0.5 line-clamp-1">{v.label}</p>
+                            <p className="text-[10px] font-mono text-amber-300 font-semibold mt-1">
+                              {v.startDate} {v.endDate ? `→ ${v.endDate}` : ""}
+                              {v.teachingDays ? ` (${v.teachingDays} teaching days)` : ""}
+                            </p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                  {/* Semester Duration Display */}
+                  <div className="bg-white/5 p-2 rounded-xl border border-white/5">
+                    <span className="text-[#8E8E93] block text-[10px]">
+                      {parsedDoc?.semesterDateVariants && parsedDoc.semesterDateVariants[selectedVariantIndex]
+                        ? `Semester Duration (${parsedDoc.semesterDateVariants[selectedVariantIndex].shortLabel})`
+                        : "Semester Duration"}
+                    </span>
+                    <span className="font-mono text-white font-semibold">
+                      {parsedDoc?.semesterDateVariants && parsedDoc.semesterDateVariants[selectedVariantIndex]
+                        ? `${parsedDoc.semesterDateVariants[selectedVariantIndex].startDate} → ${parsedDoc.semesterDateVariants[selectedVariantIndex].endDate || "TBD"}`
+                        : `${parsedDoc?.semesterStartDate} ${parsedDoc?.semesterEndDate ? `→ ${parsedDoc.semesterEndDate}` : ""}`}
+                    </span>
+                  </div>
                   {parsedDoc?.defaultMinPercent && (
                     <div className="bg-white/5 p-2 rounded-xl border border-white/5">
                       <span className="text-[#8E8E93] block text-[10px]">Min Attendance Requirement</span>
@@ -323,7 +415,14 @@ export default function HolidayParserModal({
                   {parsedDoc?.semesterName && (
                     <div className="bg-white/5 p-2 rounded-xl border border-white/5 sm:col-span-2">
                       <span className="text-[#8E8E93] block text-[10px]">Term / Session</span>
-                      <span className="text-white font-semibold">{parsedDoc.semesterName}</span>
+                      <span className="text-white font-semibold">
+                        {parsedDoc.semesterName}
+                        {parsedDoc?.semesterDateVariants && parsedDoc.semesterDateVariants[selectedVariantIndex] && (
+                          <span className="text-amber-400 text-xs ml-1.5 font-normal">
+                            • {parsedDoc.semesterDateVariants[selectedVariantIndex].shortLabel}
+                          </span>
+                        )}
+                      </span>
                     </div>
                   )}
                 </div>
@@ -495,13 +594,17 @@ export default function HolidayParserModal({
                 <button
                   type="button"
                   onClick={handleImport}
-                  disabled={isImporting || selectedCount === 0}
+                  disabled={isImporting || (selectedCount === 0 && !parsedDoc?.semesterStartDate)}
                   className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-500/90 text-black text-xs font-bold transition-all shadow-lg shadow-amber-500/20 cursor-pointer disabled:opacity-50"
                 >
                   <Sparkles size={14} />
                   <span>
                     {isImporting
-                      ? "Applying Calendar..."
+                      ? "Applying..."
+                      : selectedCount === 0 && parsedDoc?.semesterDateVariants && parsedDoc.semesterDateVariants[selectedVariantIndex]
+                      ? `Apply ${parsedDoc.semesterDateVariants[selectedVariantIndex].shortLabel} Settings`
+                      : selectedCount === 0 && parsedDoc?.semesterStartDate
+                      ? "Apply Semester Settings"
                       : `Import ${selectedCount} Holidays & Sync Settings`}
                   </span>
                 </button>
