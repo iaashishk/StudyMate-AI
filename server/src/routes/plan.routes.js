@@ -10,6 +10,8 @@ import {
   clearPlan,
   getInsights,
   pullNextEntryToToday,
+  shiftTodayAgendaToTomorrow,
+  switchToRevisionMode,
 } from "../controllers/plan.controller.js";
 import { verifyJWT } from "../middlewares/auth.middleware.js";
 import { validate } from "../middlewares/validator.middleware.js";
@@ -47,6 +49,8 @@ router.get("/week", getWeekPlan);
 router.get("/all", getFullPlan);
 router.get("/insights", getInsights);
 router.post("/pull-next", pullNextEntryToToday);
+router.post("/shift-today", shiftTodayAgendaToTomorrow);
+router.post("/switch-to-revision", switchToRevisionMode);
 
 router.delete("/clear", clearPlan);
 router.delete("/entries/:entryId", deleteEntry);

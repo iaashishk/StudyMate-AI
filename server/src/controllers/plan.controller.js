@@ -28,19 +28,40 @@ export const generatePlan = asyncHandler(async (req, res) => {
     throw new ApiError(400, "All topics are already completed — nothing to plan!");
   }
 
-  // Run the scoring engine
-  const planEntries = generateStudyPlan(subjects, new Date(), dailyHours);
-
-  // Preserve past recorded entries (from days before today) so history and streaks are retained
+  // Preserve all past recorded entries and all completed entries (including today's done tasks)
+  // so a change in daily study hours or plan regeneration never resets progress to zero!
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
   const existingPlan = await StudyPlan.findOne({ userId: req.user._id });
   const pastEntries = existingPlan
-    ? existingPlan.planEntries.filter((e) => new Date(e.date) < today)
+    ? existingPlan.planEntries.filter(
+        (e) => new Date(e.date) < today || e.status === "done"
+      )
     : [];
 
-  // Replace any existing plan for this user
+  // Identify topic IDs that are already completed
+  const completedTopicIds = new Set(
+    pastEntries.filter((e) => e.status === "done").map((e) => String(e.topicId))
+  );
+
+  // Queue only remaining uncompleted topics for the new schedule
+  const uncompletedSubjects = subjects
+    .map((subj) => {
+      const s = subj.toObject ? subj.toObject() : { ...subj };
+      s.topics = (s.topics || []).filter(
+        (t) => !t.completed && !completedTopicIds.has(String(t._id))
+      );
+      return s;
+    })
+    .filter((s) => s.topics.length > 0);
+
+  const planEntries =
+    uncompletedSubjects.length > 0
+      ? generateStudyPlan(uncompletedSubjects, new Date(), dailyHours)
+      : [];
+
+  // Replace existing plan for this user
   await StudyPlan.findOneAndDelete({ userId: req.user._id });
 
   const plan = await StudyPlan.create({
@@ -252,6 +273,171 @@ export const pullNextEntryToToday = asyncHandler(async (req, res) => {
       200,
       { pulledEntry: entryDoc, plan },
       `Pulled "${entryDoc.topicTitle}" into today's agenda with +25 Bonus XP!`
+    )
+  );
+});
+
+// ── POST /api/plan/shift-today-to-tomorrow ───────────────────────────────────
+export const shiftTodayAgendaToTomorrow = asyncHandler(async (req, res) => {
+  const plan = await StudyPlan.findOne({ userId: req.user._id });
+  if (!plan) throw new ApiError(404, "No study plan found. Generate a plan first!");
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  // Find all pending entries for today or in the future
+  const pendingEntriesFromToday = plan.planEntries.filter((e) => {
+    const d = new Date(e.date);
+    return d >= today && e.status === "pending";
+  });
+
+  if (pendingEntriesFromToday.length === 0) {
+    return res.status(200).json(
+      new ApiResponse(200, { shiftedCount: 0, plan }, "No pending study tasks to shift for today.")
+    );
+  }
+
+  // Shift all pending tasks scheduled for today and later forward by +1 day (24 hours)
+  pendingEntriesFromToday.forEach((entry) => {
+    const curDate = new Date(entry.date);
+    curDate.setDate(curDate.getDate() + 1);
+    entry.date = curDate;
+  });
+
+  await plan.save();
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      { shiftedCount: pendingEntriesFromToday.length, plan },
+      `Enjoy your off-day! Today's study agenda (${pendingEntriesFromToday.length} tasks) has been safely shifted to tomorrow.`
+    )
+  );
+});
+
+// ── POST /api/plan/switch-to-revision-mode ───────────────────────────────────
+export const switchToRevisionMode = asyncHandler(async (req, res) => {
+  const plan = await StudyPlan.findOne({ userId: req.user._id });
+  if (!plan) throw new ApiError(404, "No study plan found. Generate a plan first!");
+
+  const subjects = await Subject.find({ userId: req.user._id });
+  if (subjects.length === 0) throw new ApiError(400, "No subjects found");
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  // Find today's entries
+  const todayEntries = plan.planEntries.filter((e) => {
+    const d = new Date(e.date);
+    return d >= today && d < tomorrow;
+  });
+
+  // Check if today is already in revision mode
+  const isAlreadyRevision = todayEntries.some(
+    (e) => (e.topicTitle && e.topicTitle.startsWith("Revision:")) || e.sessionType === "revision"
+  );
+
+  if (isAlreadyRevision) {
+    // Keep past entries and any completed tasks
+    const pastEntries = plan.planEntries.filter(
+      (e) => new Date(e.date) < today || e.status === "done"
+    );
+    const completedTopicIds = new Set(
+      pastEntries.filter((e) => e.status === "done").map((e) => String(e.topicId))
+    );
+    const uncompletedSubjects = subjects
+      .map((subj) => {
+        const s = subj.toObject ? subj.toObject() : { ...subj };
+        s.topics = (s.topics || []).filter(
+          (t) => !t.completed && !completedTopicIds.has(String(t._id))
+        );
+        return s;
+      })
+      .filter((s) => s.topics.length > 0);
+
+    const planEntries =
+      uncompletedSubjects.length > 0
+        ? generateStudyPlan(uncompletedSubjects, new Date(), dailyHours)
+        : [];
+
+    plan.planEntries = [...pastEntries, ...planEntries];
+    await plan.save();
+
+    return res.status(200).json(
+      new ApiResponse(
+        200,
+        { mode: "study", plan },
+        "Switched back to standard new topic curriculum study plan!"
+      )
+    );
+  }
+
+  // Gather priority topics for revision: completed topics or topics with confidence <= 3
+  const candidateTopics = [];
+  subjects.forEach((subj) => {
+    subj.topics.forEach((top) => {
+      // Priority score for revision: lower confidence = higher urgency
+      const revScore = (6 - (top.confidenceScore || 3)) * (top.completed ? 1.5 : 1.0);
+      candidateTopics.push({
+        subjectId: subj._id,
+        subjectName: subj.name,
+        colorTag: subj.colorTag || "#0A84FF",
+        topicId: top._id,
+        topicTitle: top.title,
+        confidenceScore: top.confidenceScore || 3,
+        estimatedMinutes: Math.min(top.estimatedMinutes || 30, 25), // quick review blocks
+        revScore,
+      });
+    });
+  });
+
+  candidateTopics.sort((a, b) => b.revScore - a.revScore);
+
+  if (candidateTopics.length === 0) {
+    return res.status(200).json(
+      new ApiResponse(200, { mode: "study", plan }, "No topics available for revision yet.")
+    );
+  }
+
+  // Select top 2-3 topics for today's revision focus
+  const countToRevise = Math.max(2, Math.min(todayEntries.length || 3, 4));
+  const selectedForRevision = candidateTopics.slice(0, countToRevise);
+
+  // Replace today's pending entries with targeted revision sessions
+  // Remove existing pending entries on today
+  const nonTodayEntries = plan.planEntries.filter((e) => {
+    const d = new Date(e.date);
+    return !(d >= today && d < tomorrow && e.status === "pending");
+  });
+
+  const revisionEntries = selectedForRevision.map((cand, idx) => ({
+    subjectId: cand.subjectId,
+    subjectName: cand.subjectName,
+    subjectColor: cand.colorTag,
+    topicId: cand.topicId,
+    topicTitle: `Revision: ${cand.topicTitle}`,
+    estimatedMinutes: cand.estimatedMinutes,
+    date: new Date(),
+    orderIndex: idx,
+    status: "pending",
+    sessionType: "revision",
+    priorityScore: cand.revScore * 10,
+    whyLogic: `🧠 Targeted Recall Revision: Reinforcing ${cand.subjectName} concepts (Confidence: ${cand.confidenceScore}/5) to solidify mastery.`,
+    xpReward: 60,
+  }));
+
+  plan.planEntries = [...nonTodayEntries, ...revisionEntries];
+  await plan.save();
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      { mode: "revision", count: revisionEntries.length, plan },
+      `Switched today's agenda to Revision Mode! Focusing on ${revisionEntries.length} high-yield topics.`
     )
   );
 });

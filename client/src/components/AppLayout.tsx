@@ -11,6 +11,8 @@ import {
   Play,
   HelpCircle,
   User,
+  CalendarCheck,
+  Code2,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import FocusPlayerModal from "./FocusPlayerModal";
@@ -19,8 +21,11 @@ import { LogoIcon } from "./Logo";
 
 const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Today" },
+  { to: "/attendance", icon: CalendarCheck, label: "Attendance" },
   { to: "/subjects", icon: BookOpen, label: "Curriculum & Hub" },
-  { to: "/notes", icon: FileText, label: "Cloud Notes" },
+  { to: "/assignments", icon: FileText, label: "Assignments" },
+  { to: "/lab-codes", icon: Code2, label: "Lab Codes" },
+  { to: "/notes", icon: BookOpen, label: "Cloud Notes" },
   { to: "/plan", icon: CalendarDays, label: "Smart Plan" },
   { to: "/insights", icon: Lightbulb, label: "AI Insights" },
   { to: "/analytics", icon: BarChart2, label: "Analytics" },
@@ -29,9 +34,10 @@ const navItems = [
 
 const mobileNavItems = [
   { to: "/", icon: LayoutDashboard, label: "Today" },
-  { to: "/subjects", icon: BookOpen, label: "Curriculum" },
-  { to: "/notes", icon: FileText, label: "Notes" },
-  { to: "/plan", icon: CalendarDays, label: "Plan" },
+  { to: "/attendance", icon: CalendarCheck, label: "Attendance" },
+  { to: "/assignments", icon: FileText, label: "Assignments" },
+  { to: "/lab-codes", icon: Code2, label: "Labs" },
+  { to: "/subjects", icon: BookOpen, label: "Subjects" },
   { to: "/settings", icon: User, label: "Account" },
 ];
 

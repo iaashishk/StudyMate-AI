@@ -49,11 +49,17 @@ import authRouter from "./routes/auth.routes.js";
 import subjectRouter from "./routes/subject.routes.js";
 import planRouter from "./routes/plan.routes.js";
 import dashboardRouter from "./routes/dashboard.routes.js";
+import attendanceRouter from "./routes/attendance.routes.js";
+import assignmentRouter from "./routes/assignment.routes.js";
+import labRouter from "./routes/labCode.routes.js";
 
 app.use("/api/auth", authRouter);
 app.use("/api/subjects", subjectRouter);
 app.use("/api/plan", planRouter);
 app.use("/api/dashboard", dashboardRouter);
+app.use("/api/attendance", attendanceRouter);
+app.use("/api/assignments", assignmentRouter);
+app.use("/api/labs", labRouter);
 
 // ── Health check & Root info ────────────────────────────────────────────────
 app.get("/api/health", (_req, res) => {
@@ -91,6 +97,7 @@ app.get("/", (_req, res) => {
       subjects: "/api/subjects",
       plan: "/api/plan",
       dashboard: "/api/dashboard",
+      attendance: "/api/attendance",
     },
   });
 });

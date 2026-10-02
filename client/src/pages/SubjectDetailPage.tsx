@@ -27,14 +27,16 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { parseApiError } from "../lib/error-handler";
+import { useToast } from "../context/ToastContext";
+import { useConfirm } from "../context/ConfirmContext";
 import ConfidenceRating from "../components/ConfidenceRating";
 import Modal from "../components/Modal";
 import FocusPlayerModal from "../components/FocusPlayerModal";
 import SyllabusParserModal from "../components/SyllabusParserModal";
 import InlineDocViewerModal from "../components/InlineDocViewerModal";
-import { useToast } from "../context/ToastContext";
-import { useConfirm } from "../context/ConfirmContext";
 import { parseSyllabusClient, estimateTopicMinutes } from "../lib/syllabus-parser";
+import AssignmentsPage from "./AssignmentsPage";
+import LabCodesPage from "./LabCodesPage";
 import type { Subject, ResourceType, ParsedUnitTopic, NoteCategory } from "../types";
 
 export default function SubjectDetailPage() {
@@ -45,7 +47,7 @@ export default function SubjectDetailPage() {
 
   const [subject, setSubject] = useState<Subject | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"curriculum" | "vault" | "notes">("curriculum");
+  const [activeTab, setActiveTab] = useState<"curriculum" | "vault" | "notes" | "assignments" | "labs">("curriculum");
   const [syllabusSubView, setSyllabusSubView] = useState<"checklist" | "rawDoc">("checklist");
   const [docViewMode, setDocViewMode] = useState<"formatted" | "raw">("formatted");
   const [syncingDoc, setSyncingDoc] = useState(false);
@@ -647,6 +649,8 @@ export default function SubjectDetailPage() {
         {[
           { key: "curriculum", label: "📋 Syllabus & Units", count: totalTopics },
           { key: "notes", label: "📝 Notes & Documents", count: subject.notes?.length || 0 },
+          { key: "assignments", label: "📄 Assignments", count: undefined },
+          { key: "labs", label: "💻 Practical Lab Codes", count: undefined },
           { key: "vault", label: "📁 Resource Vault & Playlists", count: subject.resources?.length || 0 },
         ].map((tab) => (
           <button
@@ -659,15 +663,17 @@ export default function SubjectDetailPage() {
             }`}
           >
             <span>{tab.label}</span>
-            <span
-              className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
-                activeTab === tab.key
-                  ? "bg-white/10 text-[#0A84FF] font-bold"
-                  : "bg-white/5 text-ink-60"
-              }`}
-            >
-              {tab.count}
-            </span>
+            {tab.count !== undefined && (
+              <span
+                className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
+                  activeTab === tab.key
+                    ? "bg-white/10 text-[#0A84FF] font-bold"
+                    : "bg-white/5 text-ink-60"
+                }`}
+              >
+                {tab.count}
+              </span>
+            )}
 
             {activeTab === tab.key && (
               <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#0A84FF] rounded-full shadow-sm shadow-[#0A84FF]/50" />
@@ -1568,6 +1574,16 @@ export default function SubjectDetailPage() {
             </div>
           )}
         </div>
+      )}
+
+      {/* ── TAB 4: Assignments Hub ────────────────────────────────────── */}
+      {activeTab === "assignments" && (
+        <AssignmentsPage initialSubjectId={subject._id} />
+      )}
+
+      {/* ── TAB 5: Practical Lab Codes & Manual ───────────────────────── */}
+      {activeTab === "labs" && (
+        <LabCodesPage initialSubjectId={subject._id} />
       )}
 
       {/* ── Google Drive Folder Link Modal ─────────────────────────────── */}

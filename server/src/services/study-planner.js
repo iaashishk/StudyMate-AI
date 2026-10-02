@@ -132,23 +132,27 @@ export function generateStudyPlan(subjects, startDate, dailyHours) {
     );
     const urgency = 1 / daysUntilExam;
 
-    const pendingTopics = subject.topics.filter((t) => !t.completed);
+    // Map pending topics along with their natural syllabus index to guarantee pedagogical continuity
+    const pendingTopics = (subject.topics || [])
+      .map((t, originalIndex) => ({ topic: t, originalIndex }))
+      .filter(({ topic }) => !topic.completed);
+
     if (pendingTopics.length === 0) continue;
 
-    const totalSubjectMinutes = pendingTopics.reduce((sum, t) => {
+    const totalSubjectMinutes = pendingTopics.reduce((sum, { topic }) => {
       const mins =
-        t.estimatedMinutes && t.estimatedMinutes >= 5
-          ? t.estimatedMinutes
-          : estimateTopicMinutes(t.title);
+        topic.estimatedMinutes && topic.estimatedMinutes >= 5
+          ? topic.estimatedMinutes
+          : estimateTopicMinutes(topic.title);
       return sum + mins;
     }, 0);
 
-    // Group pending topics by Unit Number
+    // Group pending topics by Unit Number (Unit 1 → Unit 2 → Unit 3)
     const unitMap = new Map();
-    for (const t of pendingTopics) {
-      const uNum = t.unitNumber || 1;
+    for (const item of pendingTopics) {
+      const uNum = item.topic.unitNumber || 1;
       if (!unitMap.has(uNum)) unitMap.set(uNum, []);
-      unitMap.get(uNum).push(t);
+      unitMap.get(uNum).push(item);
     }
 
     const sortedUnitNums = Array.from(unitMap.keys()).sort((a, b) => a - b);
@@ -157,30 +161,31 @@ export function generateStudyPlan(subjects, startDate, dailyHours) {
     for (const uNum of sortedUnitNums) {
       const unitTopics = unitMap.get(uNum);
 
-      // Within this unit, sort by:
-      // 1. Cognitive Phase (1: Foundations → 2: Core → 3: Advanced)
-      // 2. Confidence Score (1, 2 first so weaker topics are practiced early)
-      unitTopics.sort((a, b) => {
-        const classA = classifyTopic(a.title);
-        const classB = classifyTopic(b.title);
-        if (classA.phase !== classB.phase) {
-          return classA.phase - classB.phase;
-        }
-        return (a.confidenceScore || 3) - (b.confidenceScore || 3);
-      });
+      // Within each unit, PRESERVE STRICT PEDAGOGICAL / SYLLABUS CONTINUITY:
+      // Topics must strictly progress in the author's intended sequential order (originalIndex).
+      // Prerequisite concepts are mastered before advanced sub-topics.
+      // Confidence score modulates time allocation and XP bonuses rather than scrambling prerequisites.
+      unitTopics.sort((a, b) => a.originalIndex - b.originalIndex);
 
-      for (const topic of unitTopics) {
-        const estMins =
+      for (const { topic } of unitTopics) {
+        let baseMins =
           topic.estimatedMinutes && topic.estimatedMinutes >= 5
             ? topic.estimatedMinutes
             : estimateTopicMinutes(topic.title);
+
+        const confidence = topic.confidenceScore || 3;
+        // Allocate additional study buffer (+25%) for weak confidence topics
+        if (confidence <= 2) {
+          baseMins = Math.round(baseMins * 1.25);
+        }
+
         queue.push({
           topic,
           unitNumber: uNum,
           unitTitle: topic.unitTitle || `Unit ${uNum}`,
-          estimatedMinutes: estMins,
-          remainingMinutes: estMins,
-          confidence: topic.confidenceScore || 3,
+          estimatedMinutes: baseMins,
+          remainingMinutes: baseMins,
+          confidence,
         });
       }
     }

@@ -14,6 +14,9 @@ const InsightsPage = lazy(() => import("./pages/InsightsPage"));
 const AnalyticsPage = lazy(() => import("./pages/AnalyticsPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const NotesPage = lazy(() => import("./pages/NotesPage"));
+const AttendancePage = lazy(() => import("./pages/AttendancePage"));
+const AssignmentsPage = lazy(() => import("./pages/AssignmentsPage"));
+const LabCodesPage = lazy(() => import("./pages/LabCodesPage"));
 
 // Layout
 import AppLayout from "./components/AppLayout";
@@ -96,6 +99,9 @@ function App() {
                 <Route path="/subjects/:id" element={<SubjectDetailPage />} />
                 <Route path="/notes" element={<NotesPage />} />
                 <Route path="/plan" element={<StudyPlanPage />} />
+                <Route path="/attendance" element={<AttendancePage />} />
+                <Route path="/assignments" element={<AssignmentsPage />} />
+                <Route path="/lab-codes" element={<LabCodesPage />} />
                 <Route path="/insights" element={<InsightsPage />} />
                 <Route path="/analytics" element={<AnalyticsPage />} />
                 <Route path="/settings" element={<SettingsPage />} />

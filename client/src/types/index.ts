@@ -154,3 +154,61 @@ export interface ApiResponse<T = unknown> {
   message: string;
   data: T;
 }
+
+// ── Assignments Hub ───────────────────────────────────────────────────────────
+export interface AssignmentQuestion {
+  _id?: string;
+  questionNumber: number;
+  question: string;
+  answer?: string;
+  aiGenerated?: boolean;
+  marks?: number;
+  notes?: string;
+}
+
+export interface Assignment {
+  _id: string;
+  userId: string;
+  subjectId: string;
+  subjectName: string;
+  title: string;
+  unitNumber?: number;
+  dueDate?: string | null;
+  status: "pending" | "in_progress" | "completed" | "submitted";
+  questions: AssignmentQuestion[];
+  rawDocText?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+// ── Lab Codes & Practical Manual ──────────────────────────────────────────────
+export interface VivaQuestion {
+  _id?: string;
+  question: string;
+  answer: string;
+}
+
+export interface LabCode {
+  _id: string;
+  userId: string;
+  subjectId: string;
+  subjectName: string;
+  experimentNumber: number;
+  title: string;
+  aim: string;
+  language: "cpp" | "c" | "python" | "java" | "sql" | "javascript" | "bash" | "other";
+  teacherPrompt?: string;
+  code: string;
+  algorithm?: string;
+  sampleInput?: string;
+  sampleOutput?: string;
+  complexity?: {
+    time?: string;
+    space?: string;
+  };
+  vivaQuestions?: VivaQuestion[];
+  status: "pending" | "verified" | "completed";
+  rawDocText?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}

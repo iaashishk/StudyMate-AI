@@ -18,6 +18,8 @@ import {
   Trash2,
   Terminal,
   FastForward,
+  Coffee,
+  RotateCcw,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useConfirm } from "../context/ConfirmContext";
@@ -151,6 +153,73 @@ export default function DashboardPage() {
       });
     } finally {
       setPullingNext(false);
+    }
+  };
+
+  const [shiftingDay, setShiftingDay] = useState(false);
+  const [switchingRevision, setSwitchingRevision] = useState(false);
+
+  const isRevisionActive = todayEntries.some(
+    (e) =>
+      (e.topicTitle && e.topicTitle.startsWith("Revision:")) ||
+      (e as unknown as { sessionType?: string }).sessionType === "revision"
+  );
+
+  const handleShiftToday = async () => {
+    const pendingTasks = todayEntries.filter((e) => e.status === "pending");
+    if (pendingTasks.length === 0) {
+      toast({
+        title: "No pending tasks scheduled for today to shift.",
+        type: "info",
+      });
+      return;
+    }
+
+    const confirmed = await confirm({
+      title: "Take an Off-Day Today?",
+      message: `Shift today's ${pendingTasks.length} pending study tasks to tomorrow? Your study streak and timetable will be safely preserved.`,
+      confirmText: "Yes, Take Off & Shift",
+    });
+    if (!confirmed) return;
+
+    setShiftingDay(true);
+    try {
+      const res = await api.post("/plan/shift-today");
+      toast({
+        title: res.data?.message || "Today's agenda shifted to tomorrow!",
+        type: "success",
+      });
+      await fetchData();
+    } catch (err: unknown) {
+      toast({
+        title:
+          (err as { response?: { data?: { message?: string } } })?.response?.data
+            ?.message || "Failed to shift study tasks",
+        type: "error",
+      });
+    } finally {
+      setShiftingDay(false);
+    }
+  };
+
+  const handleSwitchRevision = async () => {
+    setSwitchingRevision(true);
+    try {
+      const res = await api.post("/plan/switch-to-revision");
+      toast({
+        title: res.data?.message || "Study agenda synced for revision!",
+        type: "success",
+      });
+      await fetchData();
+    } catch (err: unknown) {
+      toast({
+        title:
+          (err as { response?: { data?: { message?: string } } })?.response?.data
+            ?.message || "Failed to toggle revision mode",
+        type: "error",
+      });
+    } finally {
+      setSwitchingRevision(false);
     }
   };
 
@@ -311,8 +380,50 @@ export default function DashboardPage() {
                 <h2 className="font-display text-lg text-white font-semibold">
                   Today's Study Agenda
                 </h2>
+                {isRevisionActive && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                    Revision Mode
+                  </span>
+                )}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={handleSwitchRevision}
+                  disabled={switchingRevision}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium border transition-all cursor-pointer disabled:opacity-40 ${
+                    isRevisionActive
+                      ? "bg-amber-500/15 text-amber-300 border-amber-500/30 hover:bg-amber-500/25"
+                      : "bg-white/5 hover:bg-white/10 text-slate-200 hover:text-white border-white/10"
+                  }`}
+                  title={
+                    isRevisionActive
+                      ? "Switch back to standard new topic study plan"
+                      : "Switch today's agenda to active recall & revision mode"
+                  }
+                >
+                  <RotateCcw
+                    size={13}
+                    className={isRevisionActive ? "text-amber-400" : "text-[#0A84FF]"}
+                  />
+                  <span>
+                    {switchingRevision
+                      ? "Updating…"
+                      : isRevisionActive
+                      ? "Standard Mode"
+                      : "Revise Instead"}
+                  </span>
+                </button>
+
+                <button
+                  onClick={handleShiftToday}
+                  disabled={shiftingDay || todayEntries.filter((e) => e.status === "pending").length === 0}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-medium text-slate-200 hover:text-white border border-white/10 transition-all cursor-pointer disabled:opacity-40"
+                  title="Shift today's remaining tasks forward to tomorrow (Off-Day)"
+                >
+                  <Coffee size={13} className="text-amber-400" />
+                  <span>{shiftingDay ? "Shifting…" : "Off-Day (Shift)"}</span>
+                </button>
+
                 <button
                   onClick={handlePullNext}
                   disabled={pullingNext}
