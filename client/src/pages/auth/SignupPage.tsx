@@ -11,10 +11,10 @@ import {
   Eye,
   EyeOff,
   AlertCircle,
-  Zap,
-  Brain,
-  BarChart2,
-  FolderGit2,
+  CalendarCheck,
+  CalendarDays,
+  Calendar,
+  BookOpen,
   ArrowRight,
 } from "lucide-react";
 
@@ -27,10 +27,26 @@ const schema = z.object({
 type FormData = z.infer<typeof schema>;
 
 const features = [
-  { icon: Zap, label: "v2.2 Academic Sync: Timetable ⇄ Holidays ⇄ Attendance" },
-  { icon: FolderGit2, label: "Dynamic Routine: 4h labs & classes in single blocks" },
-  { icon: Brain, label: "Zero Timezone Drift: Civil-date sync for IST" },
-  { icon: BarChart2, label: "Safe Bunk Planner & live shortage alerts" },
+  {
+    icon: CalendarCheck,
+    title: "Attendance & Bunk Tracking",
+    desc: "Subject-wise 75% target calculator with safe skip forecasting and shortage alerts.",
+  },
+  {
+    icon: CalendarDays,
+    title: "Dynamic Timetable Matrix",
+    desc: "Universal weekly routine supporting multi-hour practical labs and routine document scans.",
+  },
+  {
+    icon: Calendar,
+    title: "Academic Calendar & Holidays",
+    desc: "Full synchronization with semester dates, gazetted holidays, and university exam windows.",
+  },
+  {
+    icon: BookOpen,
+    title: "Curriculum, Notes & Lab Codes",
+    desc: "Centralized hub for syllabus notes, semester tasks, and organized programming labs.",
+  },
 ];
 
 export default function SignupPage() {
@@ -92,16 +108,19 @@ export default function SignupPage() {
           </p>
 
           {/* Feature bullets */}
-          <ul className="space-y-4">
-            {features.map(({ icon: Icon, label }) => (
-              <li key={label} className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-[#0A84FF] shrink-0">
+          <div className="space-y-4">
+            {features.map(({ icon: Icon, title, desc }) => (
+              <div key={title} className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center text-[#0A84FF] shrink-0 mt-0.5">
                   <Icon size={16} />
                 </div>
-                <span className="text-xs text-slate-300">{label}</span>
-              </li>
+                <div>
+                  <h4 className="text-xs font-semibold text-white tracking-tight">{title}</h4>
+                  <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">{desc}</p>
+                </div>
+              </div>
             ))}
-          </ul>
+          </div>
         </div>
 
         <div className="relative z-10 pt-6 border-t border-white/5 flex items-center justify-between text-xs text-slate-500">
@@ -121,14 +140,6 @@ export default function SignupPage() {
           {/* Mobile logo */}
           <div className="flex justify-center mb-6 md:hidden">
             <Logo size={42} showTagline={false} textClassName="text-2xl" />
-          </div>
-
-          {/* v2.2 Upgrade Announcement Banner */}
-          <div className="mb-4 flex items-center justify-center">
-            <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 text-[11px] font-semibold">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span>v2.2 Upgraded: Academic Sync &amp; Dynamic Routine</span>
-            </span>
           </div>
 
           {/* Form card */}

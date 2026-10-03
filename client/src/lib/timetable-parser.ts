@@ -395,15 +395,36 @@ export function parseTimetableDocFromText(
         );
 
         for (let k = 0; k < spanHours; k++) {
-          const slotTime =
-            DEFAULT_SLOT_TIMES[(slotIdx + k) % DEFAULT_SLOT_TIMES.length] || matchedTimeCol;
+          const targetSlotIdx = slotIdx + k;
+          // Prefer detected time column from document, otherwise shift proportionally
+          const detectedCol =
+            timeColumns.find((tc) => tc.colIndex === cIdx + k) ||
+            timeColumns[targetSlotIdx];
+
+          let slotStart: string;
+          let slotEnd: string;
+
+          if (detectedCol?.start && detectedCol?.end) {
+            slotStart = detectedCol.start;
+            slotEnd = detectedCol.end;
+          } else if (cellTime?.start && cellTime?.end) {
+            const periodDur = Math.round(((eh * 60 + (em || 0)) - (sh * 60 + (sm || 0))) / spanHours);
+            const startMins = sh * 60 + (sm || 0) + k * periodDur;
+            const endMins = startMins + periodDur;
+            slotStart = `${String(Math.floor(startMins / 60)).padStart(2, "0")}:${String(startMins % 60).padStart(2, "0")}`;
+            slotEnd = `${String(Math.floor(endMins / 60)).padStart(2, "0")}:${String(endMins % 60).padStart(2, "0")}`;
+          } else {
+            const defTime = DEFAULT_SLOT_TIMES[targetSlotIdx % DEFAULT_SLOT_TIMES.length];
+            slotStart = defTime.start;
+            slotEnd = defTime.end;
+          }
 
           slots.push({
             weekday: rowDay,
             weekdayName: DAY_NAMES[rowDay],
-            slotIndex: slotIdx + k,
-            startTime: slotTime.start,
-            endTime: slotTime.end,
+            slotIndex: targetSlotIdx,
+            startTime: slotStart,
+            endTime: slotEnd,
             room,
             slotType,
             subjectName: name,
@@ -504,15 +525,23 @@ export function parseTimetableDocFromText(
       );
 
       for (let k = 0; k < spanHours; k++) {
-        const slotTime =
-          DEFAULT_SLOT_TIMES[(currentSlotIndex + k) % DEFAULT_SLOT_TIMES.length] || timeRange;
+        let slotStart = timeRange.start;
+        let slotEnd = timeRange.end;
+
+        if (spanHours > 1) {
+          const periodDur = Math.round(((eh * 60 + (em || 0)) - (sh * 60 + (sm || 0))) / spanHours);
+          const startMins = sh * 60 + (sm || 0) + k * periodDur;
+          const endMins = startMins + periodDur;
+          slotStart = `${String(Math.floor(startMins / 60)).padStart(2, "0")}:${String(startMins % 60).padStart(2, "0")}`;
+          slotEnd = `${String(Math.floor(endMins / 60)).padStart(2, "0")}:${String(endMins % 60).padStart(2, "0")}`;
+        }
 
         slots.push({
           weekday: currentWeekday,
           weekdayName: DAY_NAMES[currentWeekday],
           slotIndex: currentSlotIndex + k,
-          startTime: slotTime.start,
-          endTime: slotTime.end,
+          startTime: slotStart,
+          endTime: slotEnd,
           room,
           slotType,
           subjectName: name,

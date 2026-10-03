@@ -60,10 +60,12 @@ export default function AppLayout() {
   const [focusModalOpen, setFocusModalOpen] = useState(false);
   const [tutorialOpen, setTutorialOpen] = useState(false);
   const [moreDrawerOpen, setMoreDrawerOpen] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
-  // Close "More" drawer whenever the route changes
+  // Close drawers whenever the route changes
   useEffect(() => {
     setMoreDrawerOpen(false);
+    setMobileSidebarOpen(false);
   }, [location.pathname]);
 
   // 🐼 Bubu secret message modal (triggered from Settings footer)
@@ -134,16 +136,24 @@ export default function AppLayout() {
       )}
 
       {/* ── Mobile Top Header Bar ──────────────────────────────────────── */}
-      <header className="md:hidden sticky top-0 z-40 bg-[#0F0F0F]/96 backdrop-blur-xl px-4 py-2.5 flex items-center justify-between border-b border-white/[0.07]">
-        <NavLink to="/" className="flex items-center gap-2">
-          <LogoIcon size={26} />
-          <span className="font-semibold text-white text-sm tracking-tight flex items-center gap-1.5">
-            StudyMate <span className="text-[#0A84FF]">AI</span>
-            <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-[#0A84FF]/15 text-[#0A84FF] border border-[#0A84FF]/25">
-              v2
+      <header className="md:hidden sticky top-0 z-40 bg-[#0F0F0F]/96 backdrop-blur-xl px-3 py-2.5 flex items-center justify-between border-b border-white/[0.07]">
+        <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => setMobileSidebarOpen(true)}
+            className="p-1.5 rounded-lg bg-white/5 border border-white/[0.07] text-[#8E8E93] hover:text-white transition-colors cursor-pointer"
+            title="Open Sidebar Navigation"
+            aria-label="Open Sidebar Navigation"
+          >
+            <Menu size={18} />
+          </button>
+          <NavLink to="/" className="flex items-center gap-2">
+            <LogoIcon size={26} />
+            <span className="font-semibold text-white text-sm tracking-tight flex items-center gap-1.5">
+              StudyMate <span className="text-[#0A84FF]">AI</span>
             </span>
-          </span>
-        </NavLink>
+          </NavLink>
+        </div>
 
         <div className="flex items-center gap-1.5">
           {/* Quick Focus Button */}
@@ -288,6 +298,63 @@ export default function AppLayout() {
       <main className="flex-1 min-w-0 overflow-y-auto pb-20 md:pb-0">
         <Outlet />
       </main>
+
+      {/* ── Mobile Sidebar Drawer (Full Navigation) ──────────────────── */}
+      {mobileSidebarOpen && (
+        <div
+          className="md:hidden fixed inset-0 z-50 bg-black/70 backdrop-blur-sm"
+          onClick={() => setMobileSidebarOpen(false)}
+        />
+      )}
+      <aside
+        className={`md:hidden fixed top-0 bottom-0 left-0 z-50 w-72 max-w-[82vw] bg-[#121212] border-r border-white/10 p-5 flex flex-col justify-between transition-transform duration-300 ease-out shadow-2xl ${
+          mobileSidebarOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        <div className="space-y-5">
+          <div className="flex items-center justify-between pb-3 border-b border-white/[0.08]">
+            <div className="flex items-center gap-2">
+              <LogoIcon size={28} />
+              <span className="font-bold text-white text-sm">
+                StudyMate <span className="text-[#0A84FF]">AI</span>
+              </span>
+            </div>
+            <button
+              onClick={() => setMobileSidebarOpen(false)}
+              className="p-1.5 rounded-lg bg-white/5 text-[#8E8E93] hover:text-white cursor-pointer"
+            >
+              <X size={16} />
+            </button>
+          </div>
+
+          <div className="flex flex-col gap-1 overflow-y-auto max-h-[calc(100vh-170px)] pr-1">
+            {navItems.map(({ to, icon: Icon, label }) => (
+              <NavLink
+                key={to}
+                to={to}
+                end={to === "/"}
+                className={({ isActive }) =>
+                  `flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-all ${
+                    isActive
+                      ? "bg-white/10 text-white border border-white/15 font-semibold"
+                      : "text-[#8E8E93] hover:text-white hover:bg-white/5"
+                  }`
+                }
+              >
+                <Icon size={17} />
+                <span>{label}</span>
+              </NavLink>
+            ))}
+          </div>
+        </div>
+
+        <div className="pt-3 border-t border-white/[0.08] flex items-center justify-between text-xs text-[#8E8E93]">
+          <span>v2.2 Production</span>
+          <NavLink to="/settings" className="hover:text-white underline">
+            Settings
+          </NavLink>
+        </div>
+      </aside>
 
       {/* ── Mobile "More" Drawer Backdrop ──────────────────────────────── */}
       {moreDrawerOpen && (
