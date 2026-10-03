@@ -12,6 +12,7 @@ import { HolidayItem } from "../../types/attendance";
 import { attendanceApi } from "../../lib/attendance-api";
 import { cleanHolidayDisplay } from "../../lib/holiday-parser";
 import HolidayParserModal from "./HolidayParserModal";
+import { todayLocalCivil } from "../../lib/civil-date";
 
 interface HolidayCalendarTabProps {
   onHolidaysUpdated?: () => void;
@@ -112,7 +113,7 @@ export default function HolidayCalendarTab({
     }
   };
 
-  const today = new Date().toISOString().split("T")[0];
+  const today = todayLocalCivil();
   const upcomingHolidays = holidays.filter((h) => h.date >= today);
   const pastHolidays = holidays.filter((h) => h.date < today);
 

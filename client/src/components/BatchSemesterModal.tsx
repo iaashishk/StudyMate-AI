@@ -4,6 +4,7 @@ import Modal from "./Modal";
 import api from "../lib/api";
 import { parseApiError } from "../lib/error-handler";
 import type { Subject } from "../types";
+import { todayLocalCivil, addDaysCivil } from "../lib/civil-date";
 
 interface BatchSemesterModalProps {
   isOpen: boolean;
@@ -39,11 +40,7 @@ export default function BatchSemesterModal({
   const [subjectText, setSubjectText] = useState(
     "CLOUD COMPUTING\nCOMPUTER NETWORKS\nDATA STRUCTURE\nDBMS\nJAVA"
   );
-  const [examDate, setExamDate] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 90);
-    return d.toISOString().split("T")[0];
-  });
+  const [examDate, setExamDate] = useState(() => addDaysCivil(todayLocalCivil(), 90));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -188,7 +185,7 @@ export default function BatchSemesterModal({
             type="date"
             value={examDate}
             onChange={(e) => setExamDate(e.target.value)}
-            min={new Date().toISOString().split("T")[0]}
+            min={todayLocalCivil()}
             className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-white focus:outline-none focus:border-[#0A84FF]/50"
             required
           />

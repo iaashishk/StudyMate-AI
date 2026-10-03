@@ -90,38 +90,14 @@ export interface AcademicBrainResult {
   syncScore: number; // 0-100 — how "complete" the academic setup is
 }
 
+import {
+  todayLocalCivil,
+  rangeCivil,
+  diffDaysCivil,
+  weekdayOf,
+} from "./civil-date";
+
 // ── Helpers ──────────────────────────────────────────────────────
-
-function dateStr(d: Date): string {
-  return d.toISOString().split("T")[0];
-}
-
-function parseDate(s: string): Date {
-  // Parse YYYY-MM-DD as local date (avoid UTC midnight shift)
-  const [y, m, d] = s.split("-").map(Number);
-  return new Date(y, m - 1, d);
-}
-
-function daysBetween(a: Date, b: Date): number {
-  return Math.round((b.getTime() - a.getTime()) / 86400000);
-}
-
-function getDayOfWeek(dateStr: string): number {
-  // Returns 0=Sun, 1=Mon, ..., 6=Sat — same as JS Date.getDay()
-  return parseDate(dateStr).getDay();
-}
-
-/** Returns all date strings between start (inclusive) and end (inclusive). */
-function dateRange(start: string, end: string): string[] {
-  const result: string[] = [];
-  const cur = parseDate(start);
-  const fin = parseDate(end);
-  while (cur <= fin) {
-    result.push(dateStr(cur));
-    cur.setDate(cur.getDate() + 1);
-  }
-  return result;
-}
 
 /** Map weekday name/number used in timetable to JS Date.getDay() */
 function timetableWeekdayToJsDay(weekday: number): number {
@@ -149,7 +125,7 @@ export function computeAcademicBrain(input: AcademicBrainInput): AcademicBrainRe
     examDates: rawExams = [],
   } = input;
 
-  const today = input.today || dateStr(new Date());
+  const today = input.today || todayLocalCivil();
   const conflicts: SyncConflict[] = [];
   const nudges: string[] = [];
 
@@ -177,19 +153,21 @@ export function computeAcademicBrain(input: AcademicBrainInput): AcademicBrainRe
 
   const holidayDateSet = new Set(holidays.map((h) => h.date));
 
+  // Determine if student has classes scheduled on Saturday
+  const activeSlots = slots.filter((s) => s.subjectId);
+  const hasSaturdaySlots = activeSlots.some((s) => s.weekday === 6);
+
   if (semStart) {
     const effectiveEnd = semEnd || today;
-    const start = parseDate(semStart);
-    const end = parseDate(effectiveEnd);
-    const todayDate = parseDate(today);
 
-    totalCalendarDays = Math.max(0, daysBetween(start, end) + 1);
+    totalCalendarDays = Math.max(0, diffDaysCivil(semStart, effectiveEnd) + 1);
 
     // Count weekends and holidays in semester range
-    const allDates = dateRange(semStart, effectiveEnd);
+    const allDates = rangeCivil(semStart, effectiveEnd);
     for (const d of allDates) {
-      const day = getDayOfWeek(d);
-      const isWeekend = day === 0 || day === 6;
+      const day = weekdayOf(d);
+      // Sunday is always a weekend; Saturday is a weekend only if student has no Saturday classes
+      const isWeekend = day === 0 || (day === 6 && !hasSaturdaySlots);
       if (isWeekend) {
         totalWeekendDays++;
       } else if (holidayDateSet.has(d)) {
@@ -197,16 +175,16 @@ export function computeAcademicBrain(input: AcademicBrainInput): AcademicBrainRe
       }
     }
 
-    totalWorkingDays = totalCalendarDays - totalWeekendDays - totalHolidayDays;
+    totalWorkingDays = Math.max(0, totalCalendarDays - totalWeekendDays - totalHolidayDays);
 
-    daysElapsed = Math.max(0, Math.min(daysBetween(start, todayDate), totalCalendarDays));
-    daysRemaining = Math.max(0, daysBetween(todayDate, end));
+    daysElapsed = Math.max(0, Math.min(diffDaysCivil(semStart, today), totalCalendarDays));
+    daysRemaining = Math.max(0, diffDaysCivil(today, effectiveEnd));
     semesterProgressPct =
       totalCalendarDays > 0 ? Math.round((daysElapsed / totalCalendarDays) * 100) : 0;
   }
 
   // ── 3. Timetable density ──────────────────────────────────────
-  if (slots.filter((s) => s.subjectId).length === 0) {
+  if (activeSlots.length === 0) {
     conflicts.push({
       type: "timetable_empty",
       severity: "warning",
@@ -214,19 +192,17 @@ export function computeAcademicBrain(input: AcademicBrainInput): AcademicBrainRe
     });
   }
 
-  // Count unique weekday-slotIndex combos that have subjects
-  const activeSlots = slots.filter((s) => s.subjectId);
   const weeklySessionCount = activeSlots.length; // total sessions across all weekdays
 
   // Remaining sessions: from today to end, count active timetable days
   let projectedTotalSessions = 0;
   if (semStart && daysRemaining >= 0) {
     const endBound = semEnd || today;
-    const futureDates = dateRange(today, endBound).slice(1); // exclude today
+    const futureDates = rangeCivil(today, endBound).slice(1); // exclude today
     for (const d of futureDates) {
       if (holidayDateSet.has(d)) continue;
-      const jsDay = getDayOfWeek(d);
-      if (jsDay === 0 || jsDay === 6) continue;
+      const jsDay = weekdayOf(d);
+      if (jsDay === 0 || (jsDay === 6 && !hasSaturdaySlots)) continue;
       const daySlots = activeSlots.filter((s) => timetableWeekdayToJsDay(s.weekday) === jsDay);
       projectedTotalSessions += daySlots.length;
     }
@@ -249,11 +225,11 @@ export function computeAcademicBrain(input: AcademicBrainInput): AcademicBrainRe
     let sessionsLeft = 0;
     if (semStart) {
       const endBound = semEnd || today;
-      const futureDates = dateRange(today, endBound).slice(1);
+      const futureDates = rangeCivil(today, endBound).slice(1);
       for (const d of futureDates) {
         if (holidayDateSet.has(d)) continue;
-        const jsDay = getDayOfWeek(d);
-        if (jsDay === 0 || jsDay === 6) continue;
+        const jsDay = weekdayOf(d);
+        if (jsDay === 0 || (jsDay === 6 && !hasSaturdaySlots)) continue;
         const daySlots = activeSlots.filter(
           (s) =>
             timetableWeekdayToJsDay(s.weekday) === jsDay &&
@@ -315,8 +291,8 @@ export function computeAcademicBrain(input: AcademicBrainInput): AcademicBrainRe
 
   // ── 5. Holiday conflicts ──────────────────────────────────────
   for (const h of holidays) {
-    const day = getDayOfWeek(h.date);
-    const isWeekend = day === 0 || day === 6;
+    const day = weekdayOf(h.date);
+    const isWeekend = day === 0 || (day === 6 && !hasSaturdaySlots);
     if (isWeekend) {
       // This holiday falls on a weekend — informational
       conflicts.push({
@@ -343,7 +319,6 @@ export function computeAcademicBrain(input: AcademicBrainInput): AcademicBrainRe
 
   // ── 6. Exam date analysis ─────────────────────────────────────
   const examDates = rawExams;
-  const todayDate = parseDate(today);
 
   // Flag exams on holidays
   for (const exam of examDates) {
@@ -371,15 +346,14 @@ export function computeAcademicBrain(input: AcademicBrainInput): AcademicBrainRe
 
   // Upcoming exams in next 14 days
   const upcomingExams = examDates.filter((e) => {
-    const examD = parseDate(e.date);
-    const diff = daysBetween(todayDate, examD);
+    const diff = diffDaysCivil(today, e.date);
     return diff >= 0 && diff <= 14;
   });
   upcomingExams.sort((a, b) => a.date.localeCompare(b.date));
 
   let nextExamDaysAway: number | null = null;
   if (upcomingExams.length > 0) {
-    nextExamDaysAway = daysBetween(todayDate, parseDate(upcomingExams[0].date));
+    nextExamDaysAway = diffDaysCivil(today, upcomingExams[0].date);
   }
 
   // ── 7. Smart nudges ───────────────────────────────────────────

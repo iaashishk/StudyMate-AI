@@ -23,6 +23,7 @@ import CurriculumFolderTree from "../components/CurriculumFolderTree";
 import { useConfirm } from "../context/ConfirmContext";
 import type { Subject } from "../types";
 import { useForm } from "react-hook-form";
+import { todayLocalCivil } from "../lib/civil-date";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 
@@ -470,7 +471,7 @@ export default function SubjectsPage() {
             <input
               type="date"
               {...register("examDate")}
-              min={new Date().toISOString().split("T")[0]}
+              min={todayLocalCivil()}
               className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs text-white focus:outline-none focus:border-primary/50"
             />
             {errors.examDate && (

@@ -149,13 +149,14 @@ export const attendanceApi = {
   },
 
   // Pending Days
-  getPendingDays: async () => {
+  getPendingDays: async (today?: string) => {
+    const url = today ? `/attendance/pending-days?today=${today}` : "/attendance/pending-days";
     const res = await api.get<{
       data: {
         pendingCount: number;
         pendingDays: PendingDay[];
       };
-    }>("/attendance/pending-days");
+    }>(url);
     return res.data.data;
   },
 
@@ -225,14 +226,15 @@ export const attendanceApi = {
   },
 
   // Bunk Planner & Forecast
-  getSemesterForecast: async () => {
+  getSemesterForecast: async (today?: string) => {
+    const url = today ? `/attendance/bunk/forecast?today=${today}` : "/attendance/bunk/forecast";
     const res = await api.get<{
       data: {
         semesterStartDate: string;
         semesterEndDate: string | null;
         forecasts: ForecastItem[];
       };
-    }>("/attendance/bunk/forecast");
+    }>(url);
     return res.data.data;
   },
 
@@ -366,6 +368,44 @@ export const attendanceApi = {
         entries: unknown[];
       };
     }>("/attendance/export");
+    return res.data.data;
+  },
+
+  getSyncReport: async (today?: string) => {
+    const url = today ? `/attendance/sync-report?today=${today}` : "/attendance/sync-report";
+    const res = await api.get<{
+      data: {
+        semester: SemesterInfo | null;
+        calendarSummary: {
+          totalCalendarDays: number;
+          teachingDays: number;
+          holidaysCount: number;
+          weekendDays: number;
+        };
+        perSubject: Array<{
+          subjectId: string;
+          name: string;
+          code: string;
+          color: string;
+          weeklySlots: number;
+          attended: number;
+          conducted: number;
+          sessionsLeft: number;
+          currentPct: number;
+          target: number;
+          maxSkippable: number;
+          mustAttend: number;
+        }>;
+        conflicts: Array<{
+          type: string;
+          severity: string;
+          message: string;
+          date?: string;
+          label?: string;
+        }>;
+        syncScore: number;
+      };
+    }>(url);
     return res.data.data;
   },
 };

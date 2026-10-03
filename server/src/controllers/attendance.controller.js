@@ -15,28 +15,38 @@ import {
   calculateOverallStats,
   calculateSemesterForecast,
 } from "../utils/attendance-calculator.js";
+import {
+  toCivil,
+  parseCivil,
+  todayForTimezone,
+  addDaysCivil,
+  weekdayOf,
+  rangeCivil,
+  diffDaysCivil,
+  isValidCivilDate,
+} from "../utils/civil-date.js";
+import {
+  evaluateDay,
+  evaluateDateRange,
+  countRemainingSessionsBySubject,
+} from "../services/calendar-engine.js";
 
-// Helper: Normalize date to 'YYYY-MM-DD'
-export const toDateString = (dateInput = new Date()) => {
-  const d = new Date(dateInput);
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+// Helper: Normalize date to 'YYYY-MM-DD' in user's timezone (default Asia/Kolkata)
+export const toDateString = (dateInput = new Date(), timezone = "Asia/Kolkata") => {
+  if (typeof dateInput === "string" && isValidCivilDate(dateInput)) {
+    return dateInput;
+  }
+  return todayForTimezone(timezone);
 };
 
 // Helper: Add days to 'YYYY-MM-DD'
 export const addDays = (dateStr, days) => {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  const date = new Date(y, m - 1, d);
-  date.setDate(date.getDate() + days);
-  return toDateString(date);
+  return addDaysCivil(dateStr, days);
 };
 
 // Helper: Get day of week (0 = Sun, 1 = Mon, ..., 6 = Sat)
 export const getWeekday = (dateStr) => {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  return new Date(y, m - 1, d).getDay();
+  return weekdayOf(dateStr);
 };
 
 // ── GET OR INITIALIZE USER SETTINGS & SEMESTER ───────────────────────────────
@@ -372,28 +382,27 @@ export const getDaySessions = asyncHandler(async (req, res) => {
     archivedAt: null,
   });
 
-  // Calculate live stats per subject across all dates to compute "Can I bunk?" (FR-K2)
+  // Calculate live stats per subject with ONE batched entries query (eliminates N+1)
+  const allUserEntries = await AttendanceEntry.find({ userId: req.user._id });
+  const entryCountMap = new Map();
+  for (const e of allUserEntries) {
+    const sId = String(e.subjectId);
+    if (!entryCountMap.has(sId)) entryCountMap.set(sId, { p: 0, a: 0, c: 0 });
+    const cnt = entryCountMap.get(sId);
+    if (e.status === "present") cnt.p++;
+    else if (e.status === "absent") cnt.a++;
+    else if (e.status === "cancelled") cnt.c++;
+  }
+
   const subjectStatsMap = new Map();
   for (const subj of allSubjects) {
-    const entries = await AttendanceEntry.find({
-      userId: req.user._id,
-      subjectId: subj._id,
-    });
-    let p = 0;
-    let a = 0;
-    let c = 0;
-    entries.forEach((e) => {
-      if (e.status === "present") p++;
-      else if (e.status === "absent") a++;
-      else if (e.status === "cancelled") c++;
-    });
-
+    const cnt = entryCountMap.get(String(subj._id)) || { p: 0, a: 0, c: 0 };
     const stats = calculateSubjectStats({
       openingAttended: subj.openingAttended,
       openingConducted: subj.openingConducted,
-      presentCount: p,
-      absentCount: a,
-      cancelledCount: c,
+      presentCount: cnt.p,
+      absentCount: cnt.a,
+      cancelledCount: cnt.c,
       minPercent: subj.minPercent,
       safetyMargin: settings.safetyMargin,
     });
@@ -538,6 +547,17 @@ export const markAttendance = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Invalid status. Must be present, absent, or cancelled");
   }
 
+  const source = req.body.source || (slotId ? "scheduled" : "extra");
+
+  // Calendar validation (F14): Cannot mark scheduled attendance on a declared holiday
+  const holiday = await Holiday.findOne({ userId: req.user._id, date });
+  if (holiday && source === "scheduled" && status !== "cancelled") {
+    throw new ApiError(
+      422,
+      `Cannot mark scheduled attendance on "${holiday.label}" (${date}). If an extra class was held, mark as 'Extra Class'.`
+    );
+  }
+
   const query = {
     userId: req.user._id,
     date,
@@ -551,6 +571,7 @@ export const markAttendance = asyncHandler(async (req, res) => {
 
   if (entry) {
     entry.status = status;
+    entry.source = source;
     if (notes !== undefined) entry.notes = notes;
     await entry.save();
   } else {
@@ -561,7 +582,7 @@ export const markAttendance = asyncHandler(async (req, res) => {
       subjectId,
       status,
       notes: notes || "",
-      source: "scheduled",
+      source,
     });
   }
 
@@ -572,6 +593,16 @@ export const markAttendance = asyncHandler(async (req, res) => {
 
 export const bulkMarkDayPresent = asyncHandler(async (req, res) => {
   const { date } = req.params;
+
+  // Calendar validation: Cannot bulk mark on declared holiday
+  const holiday = await Holiday.findOne({ userId: req.user._id, date });
+  if (holiday) {
+    throw new ApiError(
+      422,
+      `Cannot bulk mark attendance on declared holiday "${holiday.label}" (${date}).`
+    );
+  }
+
   const weekday = getWeekday(date);
 
   const slots = await TimetableSlot.find({
@@ -773,7 +804,7 @@ export const getAttendanceStats = asyncHandler(async (req, res) => {
 // ── 5. PENDING DAYS TRACKER (FR-B3 & FR-A8) ──────────────────────────────────
 export const getPendingDays = asyncHandler(async (req, res) => {
   const semester = await getOrCreateSemester(req.user._id);
-  const today = toDateString();
+  const today = req.query.today || toDateString();
   const yesterday = addDays(today, -1);
 
   // We look between semester.startDate and yesterday
@@ -785,6 +816,27 @@ export const getPendingDays = asyncHandler(async (req, res) => {
   });
   const holidayDates = new Set(holidays.map((h) => h.date));
 
+  // Batch query all slots and entries in range (eliminates N+1 loop)
+  const allSlots = await TimetableSlot.find({
+    userId: req.user._id,
+    subjectId: { $ne: null },
+  });
+
+  const allEntriesInRange = await AttendanceEntry.find({
+    userId: req.user._id,
+    date: { $gte: startDate, $lte: yesterday },
+  });
+
+  const markedSlotsByDate = new Map();
+  for (const entry of allEntriesInRange) {
+    if (!markedSlotsByDate.has(entry.date)) {
+      markedSlotsByDate.set(entry.date, new Set());
+    }
+    if (entry.slotId) {
+      markedSlotsByDate.get(entry.date).add(String(entry.slotId));
+    }
+  }
+
   const pendingDaysList = [];
   let currentDate = startDate;
 
@@ -792,28 +844,18 @@ export const getPendingDays = asyncHandler(async (req, res) => {
     if (!holidayDates.has(currentDate)) {
       const weekday = getWeekday(currentDate);
 
-      // Check if scheduled slots exist on this day
-      const scheduledSlots = await TimetableSlot.find({
-        userId: req.user._id,
-        weekday,
-        effectiveFrom: { $lte: currentDate },
-        $or: [{ effectiveTo: null }, { effectiveTo: { $gte: currentDate } }],
-        subjectId: { $ne: null },
+      // Filter slots active on this day in memory
+      const scheduledSlots = allSlots.filter((slot) => {
+        if (slot.weekday !== weekday) return false;
+        if (slot.effectiveFrom && slot.effectiveFrom > currentDate) return false;
+        if (slot.effectiveTo && slot.effectiveTo < currentDate) return false;
+        return true;
       });
 
       if (scheduledSlots.length > 0) {
-        // Check how many slots have entries
-        const entries = await AttendanceEntry.find({
-          userId: req.user._id,
-          date: currentDate,
-        });
-
-        const markedSlotIds = new Set(
-          entries.map((e) => (e.slotId ? String(e.slotId) : null)).filter(Boolean)
-        );
-
+        const markedSet = markedSlotsByDate.get(currentDate) || new Set();
         const unmarkedCount = scheduledSlots.filter(
-          (s) => !markedSlotIds.has(String(s._id))
+          (s) => !markedSet.has(String(s._id))
         ).length;
 
         if (unmarkedCount > 0) {
@@ -1062,7 +1104,7 @@ export const importCsv = asyncHandler(async (req, res) => {
 export const getSemesterForecast = asyncHandler(async (req, res) => {
   const semester = await getOrCreateSemester(req.user._id);
   const settings = await getOrCreateSettings(req.user._id);
-  const today = toDateString();
+  const today = req.query.today || toDateString();
   const tomorrow = addDays(today, 1);
   const endDate = semester.endDate || addDays(today, 60);
 
@@ -1071,78 +1113,64 @@ export const getSemesterForecast = asyncHandler(async (req, res) => {
     archivedAt: null,
   }).sort({ name: 1 });
 
-  // Fetch all holidays between tomorrow and semester end
+  // 1. Fetch holidays
   const holidays = await Holiday.find({
     userId: req.user._id,
     date: { $gte: tomorrow, $lte: endDate },
   });
-  const holidayDates = new Set(holidays.map((h) => h.date));
+  const holidayMap = new Map(holidays.map((h) => [h.date, h]));
 
-  // Count remaining scheduled sessions for each subject
-  const remainingCounts = new Map();
-  subjects.forEach((s) => remainingCounts.set(String(s._id), 0));
+  // 2. Fetch all slots once
+  const slots = await TimetableSlot.find({
+    userId: req.user._id,
+    subjectId: { $ne: null },
+  });
 
-  let d = tomorrow;
-  while (d <= endDate) {
-    if (!holidayDates.has(d)) {
-      const weekday = getWeekday(d);
-      const slots = await TimetableSlot.find({
-        userId: req.user._id,
-        weekday,
-        effectiveFrom: { $lte: d },
-        $or: [{ effectiveTo: null }, { effectiveTo: { $gte: d } }],
-        subjectId: { $ne: null },
-      });
+  // 3. Count remaining sessions via CalendarEngine (zero per-day DB queries)
+  const remainingCounts = countRemainingSessionsBySubject(tomorrow, endDate, {
+    semester,
+    holidayMap,
+    slots,
+  });
 
-      slots.forEach((s) => {
-        const idStr = String(s.subjectId);
-        if (remainingCounts.has(idStr)) {
-          remainingCounts.set(idStr, remainingCounts.get(idStr) + 1);
-        }
-      });
-    }
-    d = addDays(d, 1);
+  // 4. Batch query all attendance entries once (eliminates N+1 loop)
+  const allEntries = await AttendanceEntry.find({ userId: req.user._id });
+  const entryCountMap = new Map();
+  for (const e of allEntries) {
+    const sId = String(e.subjectId);
+    if (!entryCountMap.has(sId)) entryCountMap.set(sId, { p: 0, a: 0 });
+    const cnt = entryCountMap.get(sId);
+    if (e.status === "present") cnt.p++;
+    else if (e.status === "absent") cnt.a++;
   }
 
   // Calculate forecast metrics per subject
-  const forecasts = await Promise.all(
-    subjects.map(async (subj) => {
-      const entries = await AttendanceEntry.find({
-        userId: req.user._id,
-        subjectId: subj._id,
-      });
+  const forecasts = subjects.map((subj) => {
+    const sId = String(subj._id);
+    const cnt = entryCountMap.get(sId) || { p: 0, a: 0 };
+    const attended = subj.openingAttended + cnt.p;
+    const conducted = subj.openingConducted + cnt.p + cnt.a;
+    const remaining = remainingCounts.get(sId) || 0;
 
-      let presentCount = 0;
-      let absentCount = 0;
-      entries.forEach((e) => {
-        if (e.status === "present") presentCount++;
-        else if (e.status === "absent") absentCount++;
-      });
+    const forecast = calculateSemesterForecast({
+      attended,
+      conducted,
+      remaining,
+      minPercent: subj.minPercent,
+      safetyMargin: settings.safetyMargin,
+    });
 
-      const attended = subj.openingAttended + presentCount;
-      const conducted = subj.openingConducted + presentCount + absentCount;
-      const remaining = remainingCounts.get(String(subj._id)) || 0;
-
-      const forecast = calculateSemesterForecast({
-        attended,
-        conducted,
-        remaining,
-        minPercent: subj.minPercent,
-        safetyMargin: settings.safetyMargin,
-      });
-
-      return {
-        _id: subj._id,
-        name: subj.name,
-        code: subj.code,
-        color: subj.color,
-        minPercent: subj.minPercent,
-        attended,
-        conducted,
-        ...forecast,
-      };
-    })
-  );
+    return {
+      _id: subj._id,
+      name: subj.name,
+      code: subj.code,
+      color: subj.color,
+      minPercent: subj.minPercent,
+      attended,
+      conducted,
+      ...forecast,
+    };
+  });
 
   return res.status(200).json(
     new ApiResponse(
@@ -1398,9 +1426,20 @@ export const addHoliday = asyncHandler(async (req, res) => {
 
 export const deleteHoliday = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  await Holiday.deleteOne({ _id: id, userId: req.user._id });
+  const holiday = await Holiday.findOne({ _id: id, userId: req.user._id });
+  if (holiday) {
+    // If sessions were auto-cancelled by markDayHoliday with notes 'Holiday: ...',
+    // remove the cancelled mark so removing a holiday restores original schedule state (Invariant I3)
+    await AttendanceEntry.deleteMany({
+      userId: req.user._id,
+      date: holiday.date,
+      status: "cancelled",
+      notes: { $regex: /Holiday/i },
+    });
+    await Holiday.deleteOne({ _id: id, userId: req.user._id });
+  }
   return res.status(200).json(
-    new ApiResponse(200, { deleted: true }, "Holiday removed")
+    new ApiResponse(200, { deleted: true }, "Holiday removed and schedule restored")
   );
 });
 
@@ -1415,27 +1454,12 @@ export const autoPopulateHolidays = asyncHandler(async (req, res) => {
   const currentYear = new Date().getFullYear();
   const year = Number(req.body.year) || currentYear;
 
+  // Fixed-date national public holidays only (WP4 / Rule 3: Never hardcode lunar/variable festivals)
   const standardHolidays = [
     { date: `${year}-01-26`, label: "Republic Day" },
-    { date: `${year}-03-08`, label: "Maha Shivratri" },
-    { date: `${year}-03-25`, label: "Holi" },
-    { date: `${year}-03-29`, label: "Good Friday" },
-    { date: `${year}-04-11`, label: "Eid-ul-Fitr" },
-    { date: `${year}-04-17`, label: "Ram Navami" },
-    { date: `${year}-04-21`, label: "Mahavir Jayanti" },
-    { date: `${year}-05-23`, label: "Buddha Purnima" },
-    { date: `${year}-06-17`, label: "Bakrid (Eid al-Adha)" },
-    { date: `${year}-07-17`, label: "Muharram" },
     { date: `${year}-08-15`, label: "Independence Day" },
-    { date: `${year}-08-26`, label: "Janmashtami" },
-    { date: `${year}-09-16`, label: "Eid-e-Milad" },
     { date: `${year}-10-02`, label: "Mahatma Gandhi Jayanti" },
-    { date: `${year}-10-12`, label: "Dussehra (Vijayadashami)" },
-    { date: `${year}-10-31`, label: "Diwali (Deepavali)" },
-    { date: `${year}-11-01`, label: "Govardhan Puja" },
-    { date: `${year}-11-15`, label: "Guru Nanak Jayanti" },
     { date: `${year}-12-25`, label: "Christmas" },
-    { date: `${year + 1}-01-01`, label: "New Year's Day" },
     { date: `${year + 1}-01-26`, label: "Republic Day" },
   ];
 
@@ -1461,7 +1485,152 @@ export const autoPopulateHolidays = asyncHandler(async (req, res) => {
     new ApiResponse(
       200,
       { addedCount, totalHolidays: holidays.length, holidays },
-      `Added ${addedCount} academic holidays to your calendar!`
+      `Added ${addedCount} national fixed-date public holidays. For university-specific circulars, upload your circular notice.`
+    )
+  );
+});
+
+export const getSyncReport = asyncHandler(async (req, res) => {
+  const semester = await getOrCreateSemester(req.user._id);
+  const settings = await getOrCreateSettings(req.user._id);
+  const today = req.query.today || toDateString();
+
+  const semStart = semester?.startDate || null;
+  const semEnd = semester?.endDate || null;
+
+  const holidays = await Holiday.find({ userId: req.user._id }).sort({ date: 1 });
+  const holidayMap = new Map(holidays.map((h) => [h.date, h]));
+
+  const slots = await TimetableSlot.find({
+    userId: req.user._id,
+    subjectId: { $ne: null },
+  });
+
+  const subjects = await AttendanceSubject.find({
+    userId: req.user._id,
+    archivedAt: null,
+  }).sort({ name: 1 });
+
+  const allEntries = await AttendanceEntry.find({ userId: req.user._id });
+  const entryCountMap = new Map();
+  for (const e of allEntries) {
+    const sId = String(e.subjectId);
+    if (!entryCountMap.has(sId)) entryCountMap.set(sId, { p: 0, a: 0 });
+    const cnt = entryCountMap.get(sId);
+    if (e.status === "present") cnt.p++;
+    else if (e.status === "absent") cnt.a++;
+  }
+
+  // Evaluate semester calendar
+  let totalCalendarDays = 0;
+  let totalTeachingDays = 0;
+  let totalWeekendDays = 0;
+  let totalHolidayDays = 0;
+
+  if (semStart && semEnd && semStart <= semEnd) {
+    const dayInfos = evaluateDateRange(semStart, semEnd, {
+      semester,
+      holidayMap,
+      slots,
+    });
+    totalCalendarDays = dayInfos.length;
+    for (const d of dayInfos) {
+      if (d.type === "teaching") totalTeachingDays++;
+      else if (d.type === "weekend") totalWeekendDays++;
+      else if (d.type === "holiday") totalHolidayDays++;
+    }
+  }
+
+  // Count remaining sessions from tomorrow
+  const tomorrow = addDays(today, 1);
+  const remainingCounts = (semStart && semEnd && tomorrow <= semEnd)
+    ? countRemainingSessionsBySubject(tomorrow, semEnd, { semester, holidayMap, slots })
+    : new Map();
+
+  const perSubject = subjects.map((subj) => {
+    const sId = String(subj._id);
+    const cnt = entryCountMap.get(sId) || { p: 0, a: 0 };
+    const attended = subj.openingAttended + cnt.p;
+    const conducted = subj.openingConducted + cnt.p + cnt.a;
+    const remaining = remainingCounts.get(sId) || 0;
+    const weeklySlots = slots.filter((s) => String(s.subjectId) === sId).length;
+
+    const forecast = calculateSemesterForecast({
+      attended,
+      conducted,
+      remaining,
+      minPercent: subj.minPercent,
+      safetyMargin: settings.safetyMargin,
+    });
+
+    return {
+      subjectId: sId,
+      name: subj.name,
+      code: subj.code,
+      color: subj.color,
+      weeklySlots,
+      attended,
+      conducted,
+      sessionsLeft: remaining,
+      currentPct: conducted > 0 ? Math.round((attended / conducted) * 100) : 100,
+      target: subj.minPercent,
+      ...forecast,
+    };
+  });
+
+  const conflicts = [];
+  if (!semStart) {
+    conflicts.push({
+      type: "semester_not_set",
+      severity: "error",
+      message: "Semester start date is not configured.",
+    });
+  }
+  if (slots.length === 0) {
+    conflicts.push({
+      type: "timetable_empty",
+      severity: "warning",
+      message: "No timetable slots found.",
+    });
+  }
+
+  // Conflicts on holidays on weekends
+  for (const h of holidays) {
+    const wd = weekdayOf(h.date);
+    if (wd === 0 || (wd === 6 && !slots.some((s) => s.weekday === 6))) {
+      conflicts.push({
+        type: "holiday_on_weekend",
+        severity: "info",
+        message: `"${h.label}" falls on a ${wd === 0 ? "Sunday" : "Saturday"} — no weekday class impact.`,
+        date: h.date,
+        label: h.label,
+      });
+    }
+  }
+
+  let syncScore = 0;
+  if (semStart) syncScore += 30;
+  if (semEnd) syncScore += 15;
+  if (slots.length > 0) syncScore += 25;
+  if (subjects.length > 0) syncScore += 15;
+  if (holidays.length > 0) syncScore += 15;
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        semester,
+        calendarSummary: {
+          totalCalendarDays,
+          teachingDays: totalTeachingDays,
+          holidaysCount: totalHolidayDays,
+          weekendDays: totalWeekendDays,
+        },
+        perSubject,
+        conflicts,
+        syncScore,
+      },
+      "Sync report generated"
     )
   );
 });

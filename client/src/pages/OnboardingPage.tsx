@@ -9,6 +9,7 @@ import { parseApiError } from "../lib/error-handler";
 import ConfidenceRating from "../components/ConfidenceRating";
 import { Sparkles, Plus, Trash2 } from "lucide-react";
 import Logo from "../components/Logo";
+import { todayLocalCivil } from "../lib/civil-date";
 
 // Step 1: Subject form
 const step1Schema = z.object({
@@ -216,7 +217,7 @@ export default function OnboardingPage() {
                 <input
                   type="date"
                   {...r1("examDate")}
-                  min={new Date().toISOString().split("T")[0]}
+                  min={todayLocalCivil()}
                   className="w-full px-3.5 py-2.5 rounded-xl border border-white/10 bg-white/5 text-xs text-white focus:outline-none focus:border-white/20"
                 />
                 {e1.examDate && (

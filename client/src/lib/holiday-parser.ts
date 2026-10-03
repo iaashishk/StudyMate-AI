@@ -1,3 +1,6 @@
+import { normalizeDocText } from "./doc-normalize";
+import { weekdayOf } from "./civil-date";
+
 const MONTH_MAP: Record<string, number> = {
   january: 1, jan: 1,
   february: 2, feb: 2,
@@ -28,6 +31,25 @@ export interface ParsedHolidayResult {
   categoryLabel?: string;
   isOffDay?: boolean;
   dayOfWeek?: string;
+  weekdayMatches?: boolean; // verified against calculated weekday
+}
+
+/** Structured academic milestones / checkpoints extracted from academic calendars */
+export interface ParsedCalendarEvent {
+  type:
+    | "teaching"
+    | "holiday"
+    | "vacation"
+    | "prep_leave"
+    | "exam"
+    | "class_test"
+    | "attendance_checkpoint"
+    | "milestone";
+  startDate: string;
+  endDate?: string;
+  label: string;
+  days?: number;
+  batchOrCol?: string;
 }
 
 /** One column variant from a multi-column academic calendar (e.g. 1st Sem vs 3rd–7th Sem) */
@@ -43,6 +65,7 @@ export interface ParsedAcademicDocResult {
   holidays: ParsedHolidayResult[]; // Official off-days by default (Gazetted + Observed Restricted)
   allExtractedItems: ParsedHolidayResult[]; // All items detected
   skippedSpecialDays: ParsedHolidayResult[]; // Special celebration days (where classes are held / no public holiday)
+  calendarEvents?: ParsedCalendarEvent[];
   semesterStartDate?: string;
   semesterEndDate?: string;
   defaultMinPercent?: number;
@@ -279,6 +302,8 @@ export function parseAcademicDocFromText(
       skippedSpecialDays: [],
     };
   }
+
+  rawText = normalizeDocText(rawText);
 
   // ── Detect if this is an ACADEMIC CALENDAR (schedule/exam timetable) ───────
   // Academic calendars have semester dates, exam periods — NOT holiday lists.
@@ -589,16 +614,21 @@ export function parseAcademicDocFromText(
     if (
       (/OBSERVED\s*AS\s*HOLIDAYS/i.test(line) && /RESTRICTED/i.test(line)) ||
       /ON\s*ACCOUNT\s*OF\s*RESTRICTED/i.test(line) ||
+      /ACCOUNT\s*OF\s*RESTRICTED\s*HOLIDAYS/i.test(line) ||
       /FOLLOWING\s*THREE\s*DAYS\s*SHALL\s*BE\s*OBSERVED/i.test(line)
     ) {
       currentSection = "OBSERVED_RESTRICTED";
       continue; // Don't parse the header line as a holiday entry
     } else if (
-      /\bSCHEDULE[- ]*II\b/i.test(line) ||
-      /RESTRICTED\s*HOLIDAYS?/i.test(line)
+      (/\bSCHEDULE[- ]*II\b/i.test(line) || /RESTRICTED\s*HOLIDAYS?/i.test(line)) &&
+      !/OBSERVED/i.test(line) &&
+      !/ACCOUNT\s*OF/i.test(line) &&
+      !/NOTIFIED\s*BY/i.test(line)
     ) {
-      currentSection = "RESTRICTED";
-      continue;
+      if (currentSection !== "OBSERVED_RESTRICTED" || /\bSCHEDULE[- ]*II\b/i.test(line)) {
+        currentSection = "RESTRICTED";
+        continue;
+      }
     } else if (
       /FALLS?\s*ON\s*SATURDAYS?\s*(?:\/|AND)?\s*SUNDAYS?/i.test(line) ||
       /WEEKEND\s*HOLIDAYS?/i.test(line) ||
@@ -726,10 +756,22 @@ export function parseAcademicDocFromText(
     let categoryLabel = "Gazetted Holiday";
     let isOffDay = true;
 
+    const isExplicitObserved =
+      /KARVA\s*CHAUTH/i.test(cleanLabel) ||
+      /GOOD\s*FRIDAY/i.test(cleanLabel) ||
+      /BUDDHA\s*PURNIMA/i.test(cleanLabel);
+
     if (currentSection === "WEEKEND") {
       category = "weekend";
       categoryLabel = "Weekend (Sat/Sun)";
       isOffDay = false;
+    } else if (
+      isExplicitObserved &&
+      (currentSection === "OBSERVED_RESTRICTED" || currentSection === "RESTRICTED")
+    ) {
+      category = "observed_restricted";
+      categoryLabel = "Observed Holiday (RH)";
+      isOffDay = true;
     } else if (currentSection === "RESTRICTED") {
       category = "restricted";
       categoryLabel = "Restricted (Optional)";
@@ -740,12 +782,26 @@ export function parseAcademicDocFromText(
       isOffDay = true;
     }
 
+    // Check weekday consistency
+    const computedWd = weekdayOf(detectedDateStr);
+    const WD_NAMES = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+    let weekdayMatches: boolean | undefined = undefined;
+    const lowerLine = line.toLowerCase();
+    for (const [idx, wName] of WD_NAMES.entries()) {
+      if (lowerLine.includes(wName)) {
+        weekdayMatches = (idx === computedWd);
+        break;
+      }
+    }
+
     allExtractedItems.push({
       date: detectedDateStr,
       label: cleanLabel,
       category,
       categoryLabel,
       isOffDay,
+      dayOfWeek: WD_NAMES[computedWd],
+      weekdayMatches,
       rawLine: line,
     });
   }

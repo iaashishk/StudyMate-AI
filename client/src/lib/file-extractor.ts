@@ -2,7 +2,6 @@ import * as pdfjsLib from "pdfjs-dist";
 import { recognize } from "tesseract.js";
 
 // Configure pdfjs worker
-// Use unpkg CDN or bundled worker
 if (typeof window !== "undefined") {
   pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 }
@@ -13,8 +12,45 @@ export interface ExtractionProgress {
   message: string;
 }
 
+interface PdfItem {
+  str?: string;
+  transform?: number[]; // [scaleX, skewY, skewX, scaleY, transX, transY]
+  width?: number;
+  height?: number;
+}
+
 /**
- * Extract text from a PDF file page by page
+ * Renders a PDF page to a canvas and performs OCR with Tesseract.js
+ */
+async function ocrPdfPage(
+  page: any,
+  pageNum: number,
+  totalPages: number,
+  onProgress?: (p: ExtractionProgress) => void
+): Promise<string> {
+  const viewport = page.getViewport({ scale: 2.0 });
+  const canvas = document.createElement("canvas");
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return "";
+
+  await page.render({ canvasContext: ctx, viewport }).promise;
+  const dataUrl = canvas.toDataURL("image/png");
+
+  onProgress?.({
+    stage: "ocr",
+    progress: Math.round(((pageNum - 1) / totalPages) * 70) + 20,
+    message: `Running OCR on page ${pageNum} of ${totalPages}…`,
+  });
+
+  const result = await recognize(dataUrl, "eng");
+  return result.data.text || "";
+}
+
+/**
+ * Extract text from a PDF preserving row and column layout.
+ * Falls back to OCR if the PDF contains scanned images without text layer.
  */
 export async function extractTextFromPdf(
   file: File,
@@ -27,28 +63,86 @@ export async function extractTextFromPdf(
   const pdfDoc = await loadingTask.promise;
 
   const totalPages = pdfDoc.numPages;
-  const textPieces: string[] = [];
+  const pageTexts: string[] = [];
+  let totalCharsExtracted = 0;
 
   for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
     onProgress?.({
       stage: "reading",
-      progress: Math.round((pageNum / totalPages) * 85) + 10,
-      message: `Extracting page ${pageNum} of ${totalPages}…`,
+      progress: Math.round((pageNum / totalPages) * 35) + 10,
+      message: `Reading text layer: page ${pageNum} of ${totalPages}…`,
     });
 
     const page = await pdfDoc.getPage(pageNum);
     const textContent = await page.getTextContent();
-    
-    // Group text items with newline awareness
-    const pageText = textContent.items
-      .map((item: any) => item.str || "")
-      .join(" ");
+    const items = (textContent.items || []) as PdfItem[];
 
-    textPieces.push(pageText);
+    if (items.length === 0) {
+      pageTexts.push("");
+      continue;
+    }
+
+    // Group items into rows based on vertical position (transform[5])
+    // Y-coordinates in PDF.js are measured from bottom of page upwards.
+    const yTolerance = 6; // items within 6 units share the same line
+    const rows: Array<{ y: number; items: Array<{ x: number; text: string }> }> = [];
+
+    for (const item of items) {
+      const text = item.str || "";
+      if (!text.trim()) continue;
+
+      const x = item.transform ? item.transform[4] : 0;
+      const y = item.transform ? item.transform[5] : 0;
+
+      // Find an existing row within yTolerance
+      let row = rows.find((r) => Math.abs(r.y - y) <= yTolerance);
+      if (!row) {
+        row = { y, items: [] };
+        rows.push(row);
+      }
+      row.items.push({ x, text });
+    }
+
+    // Sort rows from top to bottom (Y descending)
+    rows.sort((a, b) => b.y - a.y);
+
+    // Within each row, sort items from left to right (X ascending)
+    const formattedLines: string[] = [];
+    for (const row of rows) {
+      row.items.sort((a, b) => a.x - b.x);
+      // Join row items with tab/pipe spacing to maintain table column separation
+      const lineStr = row.items.map((it) => it.text).join(" \t ");
+      formattedLines.push(lineStr);
+    }
+
+    const pageOutput = formattedLines.join("\n");
+    totalCharsExtracted += pageOutput.trim().length;
+    pageTexts.push(pageOutput);
+  }
+
+  // F20: If text layer has fewer than 80 meaningful characters per page,
+  // this is a scanned PDF! Run OCR fallback automatically.
+  const avgCharsPerPage = totalCharsExtracted / Math.max(1, totalPages);
+  if (avgCharsPerPage < 80) {
+    onProgress?.({
+      stage: "ocr",
+      progress: 20,
+      message: "Scanned PDF detected (no text layer) — reading with OCR engine…",
+    });
+
+    const ocrTexts: string[] = [];
+    for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+      const page = await pdfDoc.getPage(pageNum);
+      const text = await ocrPdfPage(page, pageNum, totalPages, onProgress);
+      ocrTexts.push(text);
+    }
+
+    onProgress?.({ stage: "done", progress: 100, message: "PDF OCR completed successfully!" });
+    return ocrTexts.join("\n\n");
   }
 
   onProgress?.({ stage: "done", progress: 100, message: "PDF text extracted successfully!" });
-  return textPieces.join("\n\n");
+  return pageTexts.join("\n\n");
 }
 
 /**
@@ -99,4 +193,3 @@ export async function extractSyllabusFromFile(
 
   throw new Error("Unsupported file format. Please upload a PDF or an Image (PNG, JPG, WebP).");
 }
-

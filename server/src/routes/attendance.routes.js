@@ -34,6 +34,7 @@ import {
   autoPopulateHolidays,
   resetSemester,
   exportAttendanceData,
+  getSyncReport,
 } from "../controllers/attendance.controller.js";
 
 const router = Router();
@@ -61,6 +62,7 @@ router.delete("/entry/:id", deleteAttendanceEntry);
 
 // Stats & Dashboard
 router.get("/stats", getAttendanceStats);
+router.get("/sync-report", getSyncReport);
 
 // Pending Days
 router.get("/pending-days", getPendingDays);

@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { DaySessionsResponse, AttendanceSession, AttendanceStatus } from "../../types/attendance";
 import { attendanceApi } from "../../lib/attendance-api";
+import { todayLocalCivil, addDaysCivil } from "../../lib/civil-date";
 import ExtraSessionModal from "./ExtraSessionModal";
 
 interface TodayTabProps {
@@ -29,15 +30,7 @@ interface TodayTabProps {
 }
 
 export default function TodayTab({ onNavigateTab, pendingCount }: TodayTabProps) {
-  const getTodayStr = () => {
-    const d = new Date();
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
-  };
-
-  const [currentDate, setCurrentDate] = useState<string>(getTodayStr());
+  const [currentDate, setCurrentDate] = useState<string>(todayLocalCivil());
   const [data, setData] = useState<DaySessionsResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -90,13 +83,7 @@ export default function TodayTab({ onNavigateTab, pendingCount }: TodayTabProps)
   }, [currentDate, loadDay]);
 
   const changeDateBy = (offset: number) => {
-    const [y, m, d] = currentDate.split("-").map(Number);
-    const date = new Date(y, m - 1, d);
-    date.setDate(date.getDate() + offset);
-    const newStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
-      date.getDate()
-    ).padStart(2, "0")}`;
-    setCurrentDate(newStr);
+    setCurrentDate(addDaysCivil(currentDate, offset));
   };
 
   // Instant 0ms Optimistic Marking
@@ -281,7 +268,7 @@ export default function TodayTab({ onNavigateTab, pendingCount }: TodayTabProps)
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [data, currentDate]);
 
-  const isToday = currentDate === getTodayStr();
+  const isToday = currentDate === todayLocalCivil();
   const dayName = new Date(
     Number(currentDate.split("-")[0]),
     Number(currentDate.split("-")[1]) - 1,
@@ -385,7 +372,7 @@ export default function TodayTab({ onNavigateTab, pendingCount }: TodayTabProps)
           <div className="flex items-center gap-2 w-full md:w-auto justify-end flex-wrap">
             {!isToday && (
               <button
-                onClick={() => setCurrentDate(getTodayStr())}
+                onClick={() => setCurrentDate(todayLocalCivil())}
                 className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-white transition-colors cursor-pointer"
               >
                 Go to Today
