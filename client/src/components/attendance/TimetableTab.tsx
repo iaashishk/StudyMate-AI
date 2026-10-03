@@ -14,6 +14,7 @@ import {
   UploadCloud,
   Columns,
   LayoutGrid,
+  ArrowLeftRight,
 } from "lucide-react";
 import { AttendanceSubject, TimetableSlot } from "../../types/attendance";
 import { attendanceApi } from "../../lib/attendance-api";
@@ -582,7 +583,7 @@ export default function TimetableTab() {
       )}
 
       {/* ── Toolbar Header ─────────────────────────────────────────────────── */}
-      <div className="p-5 rounded-3xl bg-[#141414] border border-white/[0.08] space-y-4 shadow-xl">
+      <div className="p-4 sm:p-5 rounded-3xl bg-[#141414] border border-white/[0.08] space-y-4 shadow-xl">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
@@ -596,13 +597,13 @@ export default function TimetableTab() {
             </p>
           </div>
 
-          <div className="flex items-center gap-2.5 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap w-full lg:w-auto">
             {/* View Mode Toggle: Multi-Hour Blocks vs Single Slots */}
-            <div className="flex items-center bg-white/5 border border-white/10 p-0.5 rounded-xl text-xs">
+            <div className="flex items-center bg-white/5 border border-white/10 p-0.5 rounded-xl text-xs w-full sm:w-auto justify-between sm:justify-start">
               <button
                 type="button"
                 onClick={() => setIsMergedView(true)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
+                className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
                   isMergedView
                     ? "bg-[#0A84FF] text-white shadow-sm"
                     : "text-white/60 hover:text-white"
@@ -615,7 +616,7 @@ export default function TimetableTab() {
               <button
                 type="button"
                 onClick={() => setIsMergedView(false)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
+                className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
                   !isMergedView
                     ? "bg-[#0A84FF] text-white shadow-sm"
                     : "text-white/60 hover:text-white"
@@ -628,12 +629,12 @@ export default function TimetableTab() {
             </div>
 
             {/* Filter by subject */}
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs">
-              <Filter size={13} className="text-[#8E8E93]" />
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs flex-1 sm:flex-initial min-w-[130px]">
+              <Filter size={13} className="text-[#8E8E93] shrink-0" />
               <select
                 value={selectedSubjectFilter}
                 onChange={(e) => setSelectedSubjectFilter(e.target.value)}
-                className="bg-transparent text-white focus:outline-none cursor-pointer"
+                className="bg-transparent text-white focus:outline-none cursor-pointer w-full truncate"
               >
                 <option value="all" className="bg-[#1C1C1E] text-white">
                   All Subjects
@@ -647,21 +648,21 @@ export default function TimetableTab() {
             </div>
 
             {/* Apply From Date Picker */}
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs">
-              <Calendar size={13} className="text-[#0A84FF]" />
-              <span className="text-white/70">Apply from:</span>
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs flex-1 sm:flex-initial min-w-[150px]">
+              <Calendar size={13} className="text-[#0A84FF] shrink-0" />
+              <span className="text-white/70 shrink-0">From:</span>
               <input
                 type="date"
                 value={applyFrom}
                 onChange={(e) => e.target.value && setApplyFrom(e.target.value)}
-                className="bg-transparent text-white font-mono focus:outline-none cursor-pointer"
+                className="bg-transparent text-white font-mono focus:outline-none cursor-pointer w-full text-xs"
               />
             </div>
 
             {/* Timetable Scanner */}
             <button
               onClick={() => setIsParserModalOpen(true)}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/30 text-purple-300 text-xs font-bold transition-all cursor-pointer"
+              className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/30 text-purple-300 text-xs font-bold transition-all cursor-pointer flex-1 sm:flex-initial"
               title="Scan PDF or image of routine to auto-populate timetable and subjects"
             >
               <UploadCloud size={14} />
@@ -672,7 +673,7 @@ export default function TimetableTab() {
             {slots.length > 0 && (
               <button
                 onClick={() => setShowClearAllConfirm(true)}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 text-xs font-bold transition-all cursor-pointer"
+                className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 text-xs font-bold transition-all cursor-pointer flex-1 sm:flex-initial"
                 title="Clear and reset weekly timetable"
               >
                 <Trash2 size={14} />
@@ -684,7 +685,7 @@ export default function TimetableTab() {
             <button
               onClick={handleSave}
               disabled={isSaving}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#0A84FF] hover:bg-[#0A84FF]/90 text-white text-xs font-bold transition-all shadow-lg shadow-[#0A84FF]/25 disabled:opacity-50 cursor-pointer"
+              className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-[#0A84FF] hover:bg-[#0A84FF]/90 text-white text-xs font-bold transition-all shadow-lg shadow-[#0A84FF]/25 disabled:opacity-50 cursor-pointer w-full sm:w-auto"
             >
               <Save size={15} />
               <span>{isSaving ? "Saving..." : "Save Timetable"}</span>
@@ -696,7 +697,7 @@ export default function TimetableTab() {
         <div className="pt-2 border-t border-white/[0.06] flex items-center justify-between gap-3 flex-wrap text-xs">
           <div className="flex items-center gap-2 flex-wrap">
             {/* Day Filter Pills */}
-            <div className="flex items-center bg-white/5 p-0.5 rounded-xl border border-white/5">
+            <div className="flex items-center bg-white/5 p-0.5 rounded-xl border border-white/5 overflow-x-auto max-w-full scrollbar-none shrink-0">
               <button
                 type="button"
                 onClick={() => setActiveDayFilter("all")}
@@ -784,7 +785,19 @@ export default function TimetableTab() {
           <p className="text-xs text-[#8E8E93]">Loading weekly timetable...</p>
         </div>
       ) : (
-        <div className="w-full overflow-x-auto rounded-3xl border border-white/[0.08] bg-[#121212] shadow-xl scrollbar-thin">
+        <div className="space-y-2.5">
+          {/* Mobile Swipe Hint */}
+          <div className="flex sm:hidden items-center justify-between px-3.5 py-2 rounded-2xl bg-white/[0.03] border border-white/5 text-[11px] text-[#8E8E93]">
+            <span className="flex items-center gap-1.5 font-medium text-white/70">
+              <ArrowLeftRight size={13} className="text-[#0A84FF] shrink-0" />
+              <span>Swipe horizontally to view all periods</span>
+            </span>
+            <span className="text-[10px] font-mono text-[#0A84FF] bg-[#0A84FF]/10 px-2 py-0.5 rounded-full border border-[#0A84FF]/20 font-bold shrink-0">
+              P1 – P{maxSlots}
+            </span>
+          </div>
+
+          <div className="w-full overflow-x-auto rounded-3xl border border-white/[0.08] bg-[#121212] shadow-xl scrollbar-thin">
           <div
             className="p-4 sm:p-5 space-y-3.5"
             style={{ minWidth: `${Math.max(1040, maxSlots * 140)}px` }}
@@ -1092,6 +1105,7 @@ export default function TimetableTab() {
             })}
           </div>
         </div>
+      </div>
       )}
 
       {/* Clear Timetable Confirmation Modal */}

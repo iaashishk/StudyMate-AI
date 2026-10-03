@@ -614,9 +614,9 @@ export default function TodayTab({ onNavigateTab, pendingCount }: TodayTabProps)
             return (
               <div key={session.slotId || session.entryId || index} className="space-y-2">
                 {blockInfo && blockInfo.isFirst && (
-                  <div className="flex items-center justify-between gap-2 p-3 rounded-2xl bg-purple-950/20 border border-purple-500/30 text-xs">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full bg-purple-400" />
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 rounded-2xl bg-purple-950/20 border border-purple-500/30 text-xs">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="w-2.5 h-2.5 rounded-full bg-purple-400 shrink-0" />
                       <span className="font-extrabold text-white">
                         {blockInfo.span}-Hour {slotType === "lab" ? "Lab Practical" : "Class"} Block
                       </span>
@@ -625,11 +625,11 @@ export default function TodayTab({ onNavigateTab, pendingCount }: TodayTabProps)
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
                       <button
                         type="button"
                         onClick={() => handleMarkBlock(blockInfo.indices, "present")}
-                        className="px-3 py-1 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
+                        className="flex-1 sm:flex-initial px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
                         title={`Mark all ${blockInfo.span} periods Present in 1 click`}
                       >
                         <CheckCircle2 size={13} />
@@ -638,7 +638,7 @@ export default function TodayTab({ onNavigateTab, pendingCount }: TodayTabProps)
                       <button
                         type="button"
                         onClick={() => handleMarkBlock(blockInfo.indices, "absent")}
-                        className="px-3 py-1 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1.5 shadow-sm"
+                        className="flex-1 sm:flex-initial px-3 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 text-[11px] font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
                         title={`Mark all ${blockInfo.span} periods Bunked in 1 click`}
                       >
                         <XCircle size={13} />
@@ -727,7 +727,7 @@ export default function TodayTab({ onNavigateTab, pendingCount }: TodayTabProps)
                   </div>
 
                   {/* ── 1-Tap Tactile Marking Buttons ───────────────────────────── */}
-                  <div className="flex items-center gap-2 pl-2 md:pl-0 shrink-0">
+                  <div className="flex items-center gap-2 pl-2 md:pl-0 shrink-0 w-full md:w-auto">
                     {/* Present Button */}
                     <button
                       onClick={() => handleMark(index, "present")}

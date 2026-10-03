@@ -234,8 +234,8 @@ export default function TimetableParserModal({
   ).length;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="w-full max-w-2xl bg-[#18181B] border border-white/10 rounded-3xl p-6 shadow-2xl relative max-h-[92vh] overflow-y-auto space-y-5">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="w-full max-w-2xl bg-[#18181B] border border-white/10 rounded-3xl p-4 sm:p-6 shadow-2xl relative max-h-[94vh] overflow-y-auto space-y-4 sm:space-y-5">
         <button
           onClick={onClose}
           className="absolute right-5 top-5 p-1.5 rounded-full bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition-colors cursor-pointer"
@@ -469,11 +469,11 @@ export default function TimetableParserModal({
                         </div>
 
                         {/* Subject Selector & Title */}
-                        <div className="flex items-center gap-2 pt-0.5">
+                        <div className="flex items-center gap-2 pt-0.5 flex-wrap">
                           <select
                             value={s.matchedSubjectId || "__new__"}
                             onChange={(e) => handleSubjectChange(key, e.target.value)}
-                            className="bg-white/5 border border-white/10 rounded-xl px-2.5 py-1 text-white text-xs focus:outline-none focus:border-[#0A84FF] cursor-pointer max-w-[260px] truncate"
+                            className="bg-white/5 border border-white/10 rounded-xl px-2.5 py-1 text-white text-xs focus:outline-none focus:border-[#0A84FF] cursor-pointer w-full sm:w-auto max-w-full sm:max-w-[260px] truncate"
                           >
                             <option value="__new__" className="bg-[#1C1C1E] text-amber-300">
                               + Auto-Create: "{s.subjectName}"
@@ -512,19 +512,19 @@ export default function TimetableParserModal({
             </div>
 
             {/* Bottom Actions */}
-            <div className="flex items-center justify-between gap-3 pt-3 border-t border-white/[0.08]">
-              <span className="text-xs text-[#8E8E93]">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-white/[0.08]">
+              <span className="text-xs text-[#8E8E93] text-center sm:text-left">
                 Missing subjects will be automatically created on apply.
               </span>
 
-              <div className="flex items-center gap-2.5">
+              <div className="flex items-center gap-2 w-full sm:w-auto">
                 <button
                   type="button"
                   onClick={() => {
                     handleDiscard();
                     onClose();
                   }}
-                  className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/80 text-xs font-semibold cursor-pointer"
+                  className="flex-1 sm:flex-initial px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/80 text-xs font-semibold cursor-pointer text-center"
                 >
                   Discard & Cancel
                 </button>
@@ -532,13 +532,13 @@ export default function TimetableParserModal({
                   type="button"
                   onClick={handleApply}
                   disabled={isApplying || selectedCount === 0}
-                  className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-[#0A84FF] hover:bg-[#0A84FF]/90 text-white text-xs font-bold transition-all shadow-lg shadow-[#0A84FF]/25 cursor-pointer disabled:opacity-50"
+                  className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-xl bg-[#0A84FF] hover:bg-[#0A84FF]/90 text-white text-xs font-bold transition-all shadow-lg shadow-[#0A84FF]/25 cursor-pointer disabled:opacity-50"
                 >
                   <Sparkles size={14} />
                   <span>
                     {isApplying
-                      ? "Applying Schedule..."
-                      : `Apply ${selectedCount} Classes to Timetable`}
+                      ? "Applying..."
+                      : `Apply ${selectedCount} Classes`}
                   </span>
                 </button>
               </div>
