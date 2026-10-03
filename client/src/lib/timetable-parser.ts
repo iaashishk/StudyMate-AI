@@ -15,12 +15,14 @@ export const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday"
 export const DEFAULT_SLOT_TIMES = [
   { start: "09:00", end: "10:00" },
   { start: "10:00", end: "11:00" },
-  { start: "11:15", end: "12:15" },
-  { start: "12:15", end: "13:15" },
+  { start: "11:00", end: "12:00" },
+  { start: "12:00", end: "13:00" },
+  { start: "13:00", end: "14:00" },
   { start: "14:00", end: "15:00" },
   { start: "15:00", end: "16:00" },
   { start: "16:00", end: "17:00" },
   { start: "17:00", end: "18:00" },
+  { start: "18:00", end: "19:00" },
 ];
 
 export const NON_CLASS_KEYWORDS = [
@@ -383,20 +385,34 @@ export function parseTimetableDocFromText(
 
         const { matchedId, name } = matchExistingSubject(cleanName, existingSubjects);
 
-        slots.push({
-          weekday: rowDay,
-          weekdayName: DAY_NAMES[rowDay],
-          slotIndex: slotIdx,
-          startTime: matchedTimeCol.start,
-          endTime: matchedTimeCol.end,
-          room,
-          slotType,
-          subjectName: name,
-          matchedSubjectId: matchedId,
-          rawText: cellText,
-        });
+        // Check if cell or header has an embedded multi-hour time range (e.g. 09:00 - 13:00 = 4 hours)
+        const cellTime = parseTimeRange(cellText) || matchedTimeCol;
+        const [sh, sm] = (cellTime?.start || "09:00").split(":").map(Number);
+        const [eh, em] = (cellTime?.end || "10:00").split(":").map(Number);
+        const spanHours = Math.max(
+          1,
+          Math.min(6, Math.round(((eh * 60 + (em || 0)) - (sh * 60 + (sm || 0))) / 60))
+        );
 
-        slotIdx++;
+        for (let k = 0; k < spanHours; k++) {
+          const slotTime =
+            DEFAULT_SLOT_TIMES[(slotIdx + k) % DEFAULT_SLOT_TIMES.length] || matchedTimeCol;
+
+          slots.push({
+            weekday: rowDay,
+            weekdayName: DAY_NAMES[rowDay],
+            slotIndex: slotIdx + k,
+            startTime: slotTime.start,
+            endTime: slotTime.end,
+            room,
+            slotType,
+            subjectName: name,
+            matchedSubjectId: matchedId,
+            rawText: cellText,
+          });
+        }
+
+        slotIdx += spanHours;
       }
     }
   }
@@ -480,20 +496,32 @@ export function parseTimetableDocFromText(
 
       const { matchedId, name } = matchExistingSubject(cleanName, existingSubjects);
 
-      slots.push({
-        weekday: currentWeekday,
-        weekdayName: DAY_NAMES[currentWeekday],
-        slotIndex: currentSlotIndex,
-        startTime: timeRange.start,
-        endTime: timeRange.end,
-        room,
-        slotType,
-        subjectName: name,
-        matchedSubjectId: matchedId,
-        rawText: line,
-      });
+      const [sh, sm] = (timeRange.start || "09:00").split(":").map(Number);
+      const [eh, em] = (timeRange.end || "10:00").split(":").map(Number);
+      const spanHours = Math.max(
+        1,
+        Math.min(6, Math.round(((eh * 60 + (em || 0)) - (sh * 60 + (sm || 0))) / 60))
+      );
 
-      currentSlotIndex++;
+      for (let k = 0; k < spanHours; k++) {
+        const slotTime =
+          DEFAULT_SLOT_TIMES[(currentSlotIndex + k) % DEFAULT_SLOT_TIMES.length] || timeRange;
+
+        slots.push({
+          weekday: currentWeekday,
+          weekdayName: DAY_NAMES[currentWeekday],
+          slotIndex: currentSlotIndex + k,
+          startTime: slotTime.start,
+          endTime: slotTime.end,
+          room,
+          slotType,
+          subjectName: name,
+          matchedSubjectId: matchedId,
+          rawText: line,
+        });
+      }
+
+      currentSlotIndex += spanHours;
     }
   }
 

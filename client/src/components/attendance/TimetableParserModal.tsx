@@ -166,15 +166,32 @@ export default function TimetableParserModal({
         )
       );
 
+      const SUBJECT_PALETTE = [
+        "#0A84FF",
+        "#BF5AF2",
+        "#30D158",
+        "#FF9F0A",
+        "#FF375F",
+        "#64D2FF",
+        "#FFD60A",
+      ];
+
       const newlyCreatedMap: Record<string, string> = {};
+      let colorIdx = 0;
       for (const name of unmappedNames) {
         try {
+          const codeMatch = name.match(/\b([A-Z]{2,4}[-\s]?\d{2,4})\b/i);
+          const detectedCode = codeMatch ? codeMatch[1].toUpperCase() : "";
+
           const newSubj = await attendanceApi.createSubject({
             name,
-            code: "",
+            code: detectedCode,
             teacher: "",
+            color: SUBJECT_PALETTE[colorIdx % SUBJECT_PALETTE.length],
+            minPercent: detectedDoc?.defaultMinPercent || 75,
           });
           newlyCreatedMap[name] = newSubj._id;
+          colorIdx++;
         } catch (err) {
           console.error("Auto-create subject error:", name, err);
         }
