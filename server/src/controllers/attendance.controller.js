@@ -350,6 +350,17 @@ export const saveTimetable = asyncHandler(async (req, res) => {
   );
 });
 
+export const clearTimetable = asyncHandler(async (req, res) => {
+  const result = await TimetableSlot.deleteMany({ userId: req.user._id });
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      { deletedCount: result.deletedCount },
+      "Timetable cleared successfully"
+    )
+  );
+});
+
 // ── 3. DAY SESSIONS & LIVE MARKING (FR-A1 to FR-A9, FR-K2) ───────────────────
 export const getDaySessions = asyncHandler(async (req, res) => {
   const date = req.params.date || toDateString();

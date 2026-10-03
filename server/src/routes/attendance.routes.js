@@ -7,6 +7,7 @@ import {
   deleteAttendanceSubject,
   getTimetable,
   saveTimetable,
+  clearTimetable,
   getDaySessions,
   markAttendance,
   bulkMarkDayPresent,
@@ -51,6 +52,7 @@ router.delete("/subjects/:id", deleteAttendanceSubject);
 // Timetable
 router.get("/timetable", getTimetable);
 router.put("/timetable", saveTimetable);
+router.delete("/timetable", clearTimetable);
 
 // Day Sessions & Marking
 router.get("/day/:date", getDaySessions);

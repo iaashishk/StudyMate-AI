@@ -192,6 +192,7 @@ export default function TimetableTab() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [showClearAllConfirm, setShowClearAllConfirm] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
   const [isParserModalOpen, setIsParserModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -518,10 +519,26 @@ export default function TimetableTab() {
     showToast("Day cleared");
   };
 
-  const handleClearAllSlots = () => {
-    setSlots([]);
-    setShowClearAllConfirm(false);
-    showToast("Cleared all timetable slots. Click 'Save Timetable' to commit.");
+  const handleClearAllSlots = async () => {
+    setIsClearing(true);
+    try {
+      await attendanceApi.clearTimetable();
+      setSlots([]);
+      setShowClearAllConfirm(false);
+      showToast("Timetable completely cleared from database!");
+    } catch (err) {
+      console.error("Clear timetable error:", err);
+      try {
+        await attendanceApi.saveTimetable([], applyFrom);
+        setSlots([]);
+        setShowClearAllConfirm(false);
+        showToast("Timetable cleared and saved!");
+      } catch (err2) {
+        showToast("Failed to clear timetable on server");
+      }
+    } finally {
+      setIsClearing(false);
+    }
   };
 
   const handleSave = async () => {
@@ -651,6 +668,18 @@ export default function TimetableTab() {
               <span>Scan Routine</span>
             </button>
 
+            {/* Clear Routine Button */}
+            {slots.length > 0 && (
+              <button
+                onClick={() => setShowClearAllConfirm(true)}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 text-xs font-bold transition-all cursor-pointer"
+                title="Clear and reset weekly timetable"
+              >
+                <Trash2 size={14} />
+                <span>Clear Routine</span>
+              </button>
+            )}
+
             {/* Save Timetable */}
             <button
               onClick={handleSave}
@@ -715,11 +744,11 @@ export default function TimetableTab() {
               <span>Reset 9 AM – 5 PM</span>
             </button>
 
-            {slots.some((s) => s.subjectId) && (
+            {slots.length > 0 && (
               <button
                 onClick={() => setShowClearAllConfirm(true)}
                 className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/25 text-rose-300 transition-colors cursor-pointer"
-                title="Clear all weekly classes"
+                title="Clear all weekly classes and reset timetable"
               >
                 <Trash2 size={13} className="text-rose-400" />
                 <span>Clear All</span>
@@ -758,7 +787,7 @@ export default function TimetableTab() {
         <div className="w-full overflow-x-auto rounded-3xl border border-white/[0.08] bg-[#121212] shadow-xl scrollbar-thin">
           <div
             className="p-4 sm:p-5 space-y-3.5"
-            style={{ minWidth: `${Math.max(860, maxSlots * 125)}px` }}
+            style={{ minWidth: `${Math.max(1040, maxSlots * 140)}px` }}
           >
             {/* Bell Timings Header Strip */}
             <div
@@ -854,7 +883,7 @@ export default function TimetableTab() {
                           style={{
                             gridColumn: `span ${block.span} / span ${block.span}`,
                           }}
-                          className={`p-3 rounded-2xl border transition-all flex flex-col justify-between relative group ${
+                          className={`p-2.5 rounded-2xl border transition-all flex flex-col justify-between relative group overflow-hidden ${
                             selectedSubj
                               ? isLab
                                 ? "bg-purple-950/25 border-purple-500/40 hover:border-purple-500/60 shadow-lg shadow-purple-950/20"
@@ -868,14 +897,14 @@ export default function TimetableTab() {
                         >
                           {/* Top Row: Time Range + Period Badge + Delete */}
                           <div className="flex items-center justify-between gap-1 text-[10px] font-mono border-b border-white/[0.06] pb-1.5 mb-1.5">
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-0.5 min-w-0">
                               <TimeInput
                                 value={block.startTime}
                                 onChange={(v) =>
                                   updateSlot(wd.day, block.startSlotIndex, { startTime: v })
                                 }
                               />
-                              <span className="text-white/30">–</span>
+                              <span className="text-white/30 text-[9px]">–</span>
                               <TimeInput
                                 value={block.endTime}
                                 onChange={(v) =>
@@ -884,11 +913,11 @@ export default function TimetableTab() {
                               />
                             </div>
 
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1 shrink-0">
                               {/* Period Span Tag */}
                               {isMultiHour ? (
                                 <span
-                                  className={`px-1.5 py-0.5 rounded-md text-[9px] font-bold tracking-tight uppercase border flex items-center gap-1 ${
+                                  className={`px-1.5 py-0.5 rounded-md text-[9px] font-bold tracking-tight uppercase border flex items-center gap-0.5 ${
                                     isLab
                                       ? "bg-purple-500/25 text-purple-300 border-purple-500/35"
                                       : isTutorial
@@ -898,11 +927,11 @@ export default function TimetableTab() {
                                 >
                                   {isLab ? <FlaskConical size={10} /> : isTutorial ? <GraduationCap size={10} /> : <BookOpen size={10} />}
                                   <span>
-                                    {block.span}h {isLab ? "Lab" : isTutorial ? "Tut" : "Class"} (P{block.startSlotIndex + 1}–P{block.endSlotIndex + 1})
+                                    {block.span}h (P{block.startSlotIndex + 1}–{block.endSlotIndex + 1})
                                   </span>
                                 </span>
                               ) : (
-                                <span className="text-[9px] text-[#8E8E93] font-mono">
+                                <span className="text-[9px] text-[#8E8E93] font-mono font-bold bg-white/5 px-1 py-0.5 rounded">
                                   P{block.startSlotIndex + 1}
                                 </span>
                               )}
@@ -921,7 +950,7 @@ export default function TimetableTab() {
                           </div>
 
                           {/* Middle: Subject & Room */}
-                          <div className="space-y-1.5 flex-1">
+                          <div className="space-y-1.5 flex-1 min-w-0">
                             <div>
                               <select
                                 value={block.subjectId ? String(block.subjectId) : ""}
@@ -930,7 +959,7 @@ export default function TimetableTab() {
                                     subjectId: e.target.value ? e.target.value : null,
                                   })
                                 }
-                                className="w-full text-xs font-bold rounded-xl bg-white/5 border border-white/10 py-1.5 px-2 text-white focus:outline-none focus:border-[#0A84FF] cursor-pointer"
+                                className="w-full text-xs font-bold rounded-xl bg-white/5 border border-white/10 py-1.5 px-2 text-white focus:outline-none focus:border-[#0A84FF] cursor-pointer truncate"
                                 style={{
                                   color: selectedSubj ? selectedSubj.color : "#8E8E93",
                                 }}
@@ -969,7 +998,7 @@ export default function TimetableTab() {
                                       : "lecture";
                                   updateBlock(wd.day, block, { slotType: nextType });
                                 }}
-                                className={`w-full flex items-center justify-center gap-1 py-1 px-1.5 rounded-lg text-[10px] font-bold border transition-colors cursor-pointer ${
+                                className={`w-full flex items-center justify-center gap-1 py-1 px-1.5 rounded-lg text-[10px] font-bold border transition-colors cursor-pointer truncate ${
                                   isLab
                                     ? "bg-purple-500/25 border-purple-500/40 text-purple-200"
                                     : isTutorial
@@ -980,17 +1009,17 @@ export default function TimetableTab() {
                               >
                                 {isLab ? (
                                   <>
-                                    <FlaskConical size={11} className="text-purple-300" />
+                                    <FlaskConical size={11} className="text-purple-300 shrink-0" />
                                     <span>Lab</span>
                                   </>
                                 ) : isTutorial ? (
                                   <>
-                                    <GraduationCap size={11} className="text-cyan-300" />
+                                    <GraduationCap size={11} className="text-cyan-300 shrink-0" />
                                     <span>Tutorial</span>
                                   </>
                                 ) : (
                                   <>
-                                    <BookOpen size={11} className="text-blue-300" />
+                                    <BookOpen size={11} className="text-blue-300 shrink-0" />
                                     <span>Lecture</span>
                                   </>
                                 )}
@@ -1006,15 +1035,30 @@ export default function TimetableTab() {
                                 onChange={(e) =>
                                   updateBlock(wd.day, block, { room: e.target.value })
                                 }
-                                className="w-full text-[11px] bg-transparent border-b border-white/10 py-0.5 text-white/70 placeholder:text-white/20 focus:outline-none focus:border-[#0A84FF]"
+                                className="w-full text-[11px] bg-transparent border-b border-white/10 py-0.5 text-white/70 placeholder:text-white/20 focus:outline-none focus:border-[#0A84FF] truncate"
                               />
                             </div>
                           </div>
 
-                          {/* Bottom Row: Duration Adjuster Pills & Split Action */}
-                          <div className="pt-2 mt-2 border-t border-white/[0.06] flex items-center justify-between gap-1 flex-wrap">
-                            <div className="flex items-center gap-1 text-[9px]">
-                              <span className="text-white/30 text-[9px] mr-0.5">Span:</span>
+                          {/* Bottom Row: Duration Adjuster Grid & Reset Action */}
+                          <div className="pt-2 mt-2 border-t border-white/[0.06] space-y-1">
+                            <div className="flex items-center justify-between text-[9px] text-white/40">
+                              <span className="font-semibold uppercase tracking-wider text-[8px]">Duration</span>
+                              {isMultiHour ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setBlockSpan(wd.day, block, 1, "lecture")}
+                                  className="text-[9px] text-rose-400/90 hover:text-rose-300 font-semibold transition-colors cursor-pointer"
+                                  title="Split back to 1-hour slots"
+                                >
+                                  Split 1h
+                                </button>
+                              ) : (
+                                <span className="text-[8px] text-white/30 font-mono">1 period</span>
+                              )}
+                            </div>
+
+                            <div className="grid grid-cols-4 gap-1 w-full">
                               {([1, 2, 3, 4] as const).map((s) => {
                                 const isActive = block.span === s;
                                 return (
@@ -1022,7 +1066,7 @@ export default function TimetableTab() {
                                     key={s}
                                     type="button"
                                     onClick={() => setBlockSpan(wd.day, block, s)}
-                                    className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all cursor-pointer ${
+                                    className={`w-full py-1 text-center rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
                                       isActive
                                         ? isLab
                                           ? "bg-purple-600 text-white border-purple-500 shadow-sm shadow-purple-600/30"
@@ -1038,17 +1082,6 @@ export default function TimetableTab() {
                                 );
                               })}
                             </div>
-
-                            {isMultiHour && (
-                              <button
-                                type="button"
-                                onClick={() => setBlockSpan(wd.day, block, 1, "lecture")}
-                                className="text-[9px] text-[#8E8E93] hover:text-rose-400 transition-colors ml-auto cursor-pointer flex items-center gap-0.5"
-                                title="Split back to 1-hour slots"
-                              >
-                                Split 1h
-                              </button>
-                            )}
                           </div>
                         </div>
                       );
@@ -1069,26 +1102,34 @@ export default function TimetableTab() {
               <Trash2 size={22} />
             </div>
             <div>
-              <h3 className="text-base font-bold text-white">Clear Weekly Timetable?</h3>
+              <h3 className="text-base font-bold text-white">Reset & Clear Weekly Timetable?</h3>
               <p className="text-xs text-[#8E8E93] mt-1.5 leading-relaxed">
-                This will unassign all classes across Monday to Sunday. Click{" "}
-                <strong>"Save Timetable"</strong> afterwards to commit the changes.
+                This will immediately remove all classes across Monday to Sunday from your account. You can then scan a new timetable or set up classes fresh.
               </p>
             </div>
             <div className="flex items-center justify-center gap-2.5 pt-2">
               <button
                 type="button"
                 onClick={() => setShowClearAllConfirm(false)}
-                className="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/80 text-xs font-semibold cursor-pointer"
+                disabled={isClearing}
+                className="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/80 text-xs font-semibold cursor-pointer disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleClearAllSlots}
-                className="px-4 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold transition-all shadow-lg shadow-rose-500/25 cursor-pointer"
+                disabled={isClearing}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold transition-all shadow-lg shadow-rose-500/25 cursor-pointer disabled:opacity-50"
               >
-                Yes, Clear All
+                {isClearing ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Clearing...</span>
+                  </>
+                ) : (
+                  <span>Yes, Clear Everything</span>
+                )}
               </button>
             </div>
           </div>
@@ -1101,7 +1142,7 @@ export default function TimetableTab() {
           isOpen={isParserModalOpen}
           onClose={() => setIsParserModalOpen(false)}
           subjects={subjects}
-          onApplySlots={async (newSlots) => {
+          onApplySlots={async (newSlots, replaceExisting = true) => {
             try {
               const refreshedSubjects = await attendanceApi.getSubjects();
               setSubjects(refreshedSubjects);
@@ -1109,21 +1150,25 @@ export default function TimetableTab() {
               console.error("Failed to refresh subjects", e);
             }
 
-            setSlots((prev) => {
-              const prevMap = new Map<string, TimetableSlot>();
-              prev.forEach((s) => prevMap.set(`${s.weekday}_${s.slotIndex}`, s));
-              newSlots.forEach((s) => prevMap.set(`${s.weekday}_${s.slotIndex}`, s));
-              return Array.from(prevMap.values());
-            });
+            const finalSlots = replaceExisting
+              ? newSlots
+              : (() => {
+                  const prevMap = new Map<string, TimetableSlot>();
+                  slots.forEach((s) => prevMap.set(`${s.weekday}_${s.slotIndex}`, s));
+                  newSlots.forEach((s) => prevMap.set(`${s.weekday}_${s.slotIndex}`, s));
+                  return Array.from(prevMap.values());
+                })();
 
-            const maxIdx = Math.max(0, ...newSlots.map((s) => s.slotIndex));
+            setSlots(finalSlots);
+
+            const maxIdx = Math.max(0, ...finalSlots.map((s) => s.slotIndex));
             if (maxIdx + 1 > maxSlots) {
               setMaxSlots(Math.min(10, maxIdx + 1));
             }
 
             // Immediately save to server so imported slots persist
             try {
-              await attendanceApi.saveTimetable(newSlots, applyFrom);
+              await attendanceApi.saveTimetable(finalSlots, applyFrom);
             } catch (err) {
               console.error("Auto-save imported timetable failed", err);
             }

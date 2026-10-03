@@ -87,6 +87,13 @@ export const attendanceApi = {
     return res.data.data;
   },
 
+  clearTimetable: async () => {
+    const res = await api.delete<{
+      data: { deletedCount: number };
+    }>("/attendance/timetable");
+    return res.data.data;
+  },
+
   // Day & Marking
   getDaySessions: async (date: string) => {
     const res = await api.get<{ data: DaySessionsResponse }>(`/attendance/day/${date}`);

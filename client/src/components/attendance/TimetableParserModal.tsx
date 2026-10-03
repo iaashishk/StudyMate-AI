@@ -13,6 +13,7 @@ import {
   MapPin,
   CheckSquare,
   Square,
+  RotateCcw,
 } from "lucide-react";
 import { AttendanceSubject, TimetableSlot } from "../../types/attendance";
 import { extractSyllabusFromFile, type ExtractionProgress } from "../../lib/file-extractor";
@@ -27,7 +28,7 @@ interface TimetableParserModalProps {
   isOpen: boolean;
   onClose: () => void;
   subjects: AttendanceSubject[];
-  onApplySlots: (slots: TimetableSlot[]) => Promise<void>;
+  onApplySlots: (slots: TimetableSlot[], replaceExisting?: boolean) => Promise<void>;
 }
 
 export default function TimetableParserModal({
@@ -42,10 +43,20 @@ export default function TimetableParserModal({
   const [detectedDoc, setDetectedDoc] = useState<ParsedTimetableDocResult | null>(null);
   const [parsedSlots, setParsedSlots] = useState<ParsedTimetableSlotResult[]>([]);
   const [selectedSlotKeys, setSelectedSlotKeys] = useState<Set<string>>(new Set());
+  const [replaceExisting, setReplaceExisting] = useState(true);
   const [isApplying, setIsApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleDiscard = () => {
+    setFileName(null);
+    setDetectedDoc(null);
+    setParsedSlots([]);
+    setSelectedSlotKeys(new Set());
+    setError(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
 
   if (!isOpen) return null;
 
@@ -208,7 +219,7 @@ export default function TimetableParserModal({
         subjectId: s.matchedSubjectId || newlyCreatedMap[s.subjectName.trim()] || null,
       }));
 
-      await onApplySlots(timetableSlots);
+      await onApplySlots(timetableSlots, replaceExisting);
       onClose();
     } catch (err) {
       console.error("Apply slots failed", err);
@@ -312,15 +323,13 @@ export default function TimetableParserModal({
                 </span>
               </div>
               <button
-                onClick={() => {
-                  setDetectedDoc(null);
-                  setParsedSlots([]);
-                  setSelectedSlotKeys(new Set());
-                  setFileName(null);
-                }}
-                className="text-xs text-[#8E8E93] hover:text-white cursor-pointer"
+                type="button"
+                onClick={handleDiscard}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-rose-500/15 border border-white/10 hover:border-rose-500/25 text-white/70 hover:text-rose-300 text-xs font-semibold transition-all cursor-pointer"
+                title="Discard this parsed routine and upload a different document"
               >
-                Scan Another Schedule
+                <RotateCcw size={13} />
+                <span>Discard & Scan Different File</span>
               </button>
             </div>
 
@@ -353,6 +362,27 @@ export default function TimetableParserModal({
                 </div>
               </div>
             )}
+
+            {/* Replace Timetable Option */}
+            <div className="flex items-center justify-between p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.08]">
+              <div className="space-y-0.5">
+                <span className="text-xs font-bold text-white block">
+                  Replace Existing Timetable
+                </span>
+                <span className="text-[11px] text-[#8E8E93] block">
+                  Wipes previously parsed/saved timetable and applies this routine fresh (recommended)
+                </span>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer ml-3 shrink-0">
+                <input
+                  type="checkbox"
+                  checked={replaceExisting}
+                  onChange={(e) => setReplaceExisting(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-10 h-5 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#0A84FF]"></div>
+              </label>
+            </div>
 
             {/* Bulk Select Bar */}
             <div className="flex items-center justify-between pt-1 border-t border-white/[0.06] text-xs">
@@ -490,10 +520,13 @@ export default function TimetableParserModal({
               <div className="flex items-center gap-2.5">
                 <button
                   type="button"
-                  onClick={onClose}
+                  onClick={() => {
+                    handleDiscard();
+                    onClose();
+                  }}
                   className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/80 text-xs font-semibold cursor-pointer"
                 >
-                  Cancel
+                  Discard & Cancel
                 </button>
                 <button
                   type="button"
