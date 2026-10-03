@@ -15,6 +15,8 @@ import {
   Columns,
   LayoutGrid,
   ArrowLeftRight,
+  Rows3,
+  Table,
 } from "lucide-react";
 import { AttendanceSubject, TimetableSlot } from "../../types/attendance";
 import { attendanceApi } from "../../lib/attendance-api";
@@ -181,6 +183,12 @@ export default function TimetableTab() {
   const [slots, setSlots] = useState<TimetableSlot[]>([]);
   const [maxSlots, setMaxSlots] = useState<number>(8);
   const [isMergedView, setIsMergedView] = useState<boolean>(true);
+  const [layoutMode, setLayoutMode] = useState<"vertical" | "grid">(() => {
+    if (typeof window !== "undefined" && window.innerWidth < 768) {
+      return "vertical";
+    }
+    return "grid";
+  });
   const [activeDayFilter, setActiveDayFilter] = useState<number | "all">(() => {
     if (typeof window !== "undefined" && window.innerWidth < 768) {
       const today = new Date().getDay();
@@ -628,6 +636,36 @@ export default function TimetableTab() {
               </button>
             </div>
 
+            {/* Layout Toggle: Vertical Cards vs Matrix Grid */}
+            <div className="flex items-center bg-white/5 border border-white/10 p-0.5 rounded-xl text-xs w-full sm:w-auto justify-between sm:justify-start">
+              <button
+                type="button"
+                onClick={() => setLayoutMode("vertical")}
+                className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
+                  layoutMode === "vertical"
+                    ? "bg-[#0A84FF] text-white shadow-sm"
+                    : "text-white/60 hover:text-white"
+                }`}
+                title="Vertical stacked cards (ideal for mobile)"
+              >
+                <Rows3 size={13} />
+                <span>Vertical Cards</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setLayoutMode("grid")}
+                className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
+                  layoutMode === "grid"
+                    ? "bg-[#0A84FF] text-white shadow-sm"
+                    : "text-white/60 hover:text-white"
+                }`}
+                title="Horizontal full matrix grid (ideal for desktop)"
+              >
+                <Table size={13} />
+                <span>Matrix Grid</span>
+              </button>
+            </div>
+
             {/* Filter by subject */}
             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs flex-1 sm:flex-initial min-w-[130px]">
               <Filter size={13} className="text-[#8E8E93] shrink-0" />
@@ -783,6 +821,288 @@ export default function TimetableTab() {
         <div className="py-20 flex flex-col items-center justify-center gap-3">
           <div className="w-8 h-8 border-2 border-[#0A84FF] border-t-transparent rounded-full animate-spin" />
           <p className="text-xs text-[#8E8E93]">Loading weekly timetable...</p>
+        </div>
+      ) : layoutMode === "vertical" ? (
+        /* ── Mobile / Vertical Stacked Cards View ────────────────────────────── */
+        <div className="space-y-4">
+          {/* Helpful notice for mobile layout */}
+          <div className="flex sm:hidden items-center justify-between px-3.5 py-2 rounded-2xl bg-white/[0.03] border border-white/5 text-[11px] text-[#8E8E93]">
+            <span className="flex items-center gap-1.5 font-medium text-white/70">
+              <Rows3 size={13} className="text-[#0A84FF] shrink-0" />
+              <span>Vertical Schedule &bull; Tap day above to switch</span>
+            </span>
+            <span className="text-[10px] font-mono text-[#0A84FF] bg-[#0A84FF]/10 px-2 py-0.5 rounded-full border border-[#0A84FF]/20 font-bold shrink-0">
+              {visibleWeekdays.length === 1 ? visibleWeekdays[0].name : "All Days"}
+            </span>
+          </div>
+
+          {visibleWeekdays.map((wd) => {
+            const dayBlocks = getDayBlocks(wd.day, maxSlots, getSlot, isMergedView);
+            const activeSlotsCount = slots.filter((s) => s.weekday === wd.day && s.subjectId).length;
+            const multiHourCount = dayBlocks.filter((b) => b.span > 1 && b.subjectId).length;
+
+            return (
+              <div
+                key={wd.day}
+                className="p-4 rounded-3xl bg-[#121212] border border-white/[0.08] shadow-xl space-y-3.5"
+              >
+                {/* Day Header */}
+                <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="font-extrabold text-white text-base tracking-tight">
+                      {wd.name}
+                    </span>
+                    <span className="text-[11px] font-mono text-[#8E8E93] bg-white/5 px-2 py-0.5 rounded-md">
+                      {activeSlotsCount} class{activeSlotsCount === 1 ? "" : "es"}
+                    </span>
+                    {multiHourCount > 0 && (
+                      <span className="text-[10px] font-mono text-purple-300 bg-purple-500/15 border border-purple-500/25 px-2 py-0.5 rounded-md">
+                        {multiHourCount} multi-hour
+                      </span>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleClearDay(wd.day)}
+                    className="flex items-center gap-1 text-[11px] text-[#8E8E93] hover:text-rose-400 transition-colors cursor-pointer"
+                    title="Clear all classes on this day"
+                  >
+                    <Trash2 size={12} />
+                    <span>Clear Day</span>
+                  </button>
+                </div>
+
+                {/* Vertical Stack of Period Cards */}
+                <div className="space-y-3">
+                  {dayBlocks.map((block) => {
+                    const selectedSubj = subjects.find(
+                      (s) => String(s._id) === String(block.subjectId)
+                    );
+                    const isDimmed =
+                      selectedSubjectFilter !== "all" &&
+                      block.subjectId &&
+                      String(block.subjectId) !== selectedSubjectFilter;
+
+                    const isLab = block.slotType === "lab";
+                    const isTutorial = block.slotType === "tutorial";
+                    const isMultiHour = block.span > 1;
+
+                    return (
+                      <div
+                        key={block.id}
+                        className={`p-3.5 rounded-2xl border transition-all flex flex-col justify-between relative group ${
+                          selectedSubj
+                            ? isLab
+                              ? "bg-purple-950/25 border-purple-500/40 shadow-lg shadow-purple-950/20"
+                              : isTutorial
+                              ? "bg-cyan-950/25 border-cyan-500/40 shadow-lg"
+                              : "bg-white/[0.04] border-white/10 shadow-sm"
+                            : isLab
+                            ? "bg-purple-950/15 border-purple-500/30"
+                            : "bg-white/[0.015] border-white/5 border-dashed"
+                        } ${isDimmed ? "opacity-25" : "opacity-100"}`}
+                      >
+                        {/* Top Bar: Period / Time / Span badge / Clear */}
+                        <div className="flex items-center justify-between gap-2 text-xs font-mono border-b border-white/[0.06] pb-2 mb-2.5">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {/* Period Badge */}
+                            {isMultiHour ? (
+                              <span
+                                className={`px-2 py-0.5 rounded-lg text-[10px] font-bold tracking-tight uppercase border flex items-center gap-1 ${
+                                  isLab
+                                    ? "bg-purple-500/25 text-purple-300 border-purple-500/35"
+                                    : isTutorial
+                                    ? "bg-cyan-500/25 text-cyan-300 border-cyan-500/35"
+                                    : "bg-blue-500/25 text-blue-300 border-blue-500/35"
+                                }`}
+                              >
+                                {isLab ? (
+                                  <FlaskConical size={11} />
+                                ) : isTutorial ? (
+                                  <GraduationCap size={11} />
+                                ) : (
+                                  <BookOpen size={11} />
+                                )}
+                                <span>
+                                  {block.span}h (P{block.startSlotIndex + 1}–{block.endSlotIndex + 1})
+                                </span>
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-white/90 font-mono font-bold bg-white/10 px-2 py-0.5 rounded-md border border-white/10">
+                                Period {block.startSlotIndex + 1}
+                              </span>
+                            )}
+
+                            {/* Time Range */}
+                            <div className="flex items-center gap-1 text-[11px] text-white/70 bg-white/5 px-2 py-0.5 rounded-md">
+                              <Clock size={11} className="text-[#8E8E93]" />
+                              <TimeInput
+                                value={block.startTime}
+                                onChange={(v) =>
+                                  updateSlot(wd.day, block.startSlotIndex, { startTime: v })
+                                }
+                              />
+                              <span className="text-white/30">–</span>
+                              <TimeInput
+                                value={block.endTime}
+                                onChange={(v) =>
+                                  updateSlot(wd.day, block.endSlotIndex, { endTime: v })
+                                }
+                              />
+                            </div>
+                          </div>
+
+                          {(block.subjectId || isMultiHour) && (
+                            <button
+                              type="button"
+                              onClick={() => clearBlock(wd.day, block)}
+                              className="text-white/40 hover:text-rose-400 p-1 rounded-md transition-colors cursor-pointer"
+                              title="Clear slot / block"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Subject Selection */}
+                        <div className="space-y-2">
+                          <div>
+                            <select
+                              value={block.subjectId ? String(block.subjectId) : ""}
+                              onChange={(e) =>
+                                updateBlock(wd.day, block, {
+                                  subjectId: e.target.value ? e.target.value : null,
+                                })
+                              }
+                              className="w-full text-sm font-bold rounded-xl bg-white/5 border border-white/10 py-2 px-3 text-white focus:outline-none focus:border-[#0A84FF] cursor-pointer"
+                              style={{
+                                color: selectedSubj ? selectedSubj.color : "#8E8E93",
+                              }}
+                            >
+                              <option value="" className="bg-[#1C1C1E] text-[#8E8E93]">
+                                {isMultiHour
+                                  ? isLab
+                                    ? `${block.span}-Hour Lab Practical`
+                                    : isTutorial
+                                    ? `${block.span}-Hour Tutorial`
+                                    : `${block.span}-Hour Combined Class`
+                                  : "Free Period (Tap to assign subject)"}
+                              </option>
+                              {subjects.map((subj) => (
+                                <option
+                                  key={subj._id}
+                                  value={subj._id}
+                                  className="bg-[#1C1C1E] text-white"
+                                >
+                                  {subj.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          {/* Type Toggle & Room in a 2-column grid */}
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const nextType =
+                                  block.slotType === "lecture"
+                                    ? "lab"
+                                    : block.slotType === "lab"
+                                    ? "tutorial"
+                                    : "lecture";
+                                updateBlock(wd.day, block, { slotType: nextType });
+                              }}
+                              className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-xl text-xs font-bold border transition-colors cursor-pointer truncate ${
+                                isLab
+                                  ? "bg-purple-500/25 border-purple-500/40 text-purple-200"
+                                  : isTutorial
+                                  ? "bg-cyan-500/25 border-cyan-500/40 text-cyan-200"
+                                  : "bg-white/5 border-white/10 text-white/70 hover:text-white"
+                              }`}
+                              title="Toggle Lecture / Lab / Tutorial"
+                            >
+                              {isLab ? (
+                                <>
+                                  <FlaskConical size={12} className="text-purple-300 shrink-0" />
+                                  <span>Lab</span>
+                                </>
+                              ) : isTutorial ? (
+                                <>
+                                  <GraduationCap size={12} className="text-cyan-300 shrink-0" />
+                                  <span>Tutorial</span>
+                                </>
+                              ) : (
+                                <>
+                                  <BookOpen size={12} className="text-blue-300 shrink-0" />
+                                  <span>Lecture</span>
+                                </>
+                              )}
+                            </button>
+
+                            <input
+                              type="text"
+                              placeholder={isLab ? "Lab (e.g. Lab 3)" : "Room (e.g. LH-1)"}
+                              value={block.room || ""}
+                              onChange={(e) =>
+                                updateBlock(wd.day, block, { room: e.target.value })
+                              }
+                              className="text-xs bg-white/5 border border-white/10 rounded-xl px-2.5 py-1.5 text-white/90 placeholder:text-white/30 focus:outline-none focus:border-[#0A84FF] truncate"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Duration Selector */}
+                        <div className="pt-2.5 mt-2.5 border-t border-white/[0.06] flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-white/40 uppercase tracking-wider font-semibold">
+                              Duration
+                            </span>
+                            {isMultiHour && (
+                              <button
+                                type="button"
+                                onClick={() => setBlockSpan(wd.day, block, 1, "lecture")}
+                                className="text-[10px] text-rose-400/90 hover:text-rose-300 font-semibold transition-colors cursor-pointer"
+                                title="Split back to 1-hour slots"
+                              >
+                                Split 1h
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            {([1, 2, 3, 4] as const).map((s) => {
+                              const isActive = block.span === s;
+                              return (
+                                <button
+                                  key={s}
+                                  type="button"
+                                  onClick={() => setBlockSpan(wd.day, block, s)}
+                                  className={`px-2.5 py-1 text-center rounded-lg text-xs font-bold border transition-all cursor-pointer ${
+                                    isActive
+                                      ? isLab
+                                        ? "bg-purple-600 text-white border-purple-500 shadow-sm shadow-purple-600/30"
+                                        : isTutorial
+                                        ? "bg-cyan-500 text-black border-cyan-400 font-extrabold"
+                                        : "bg-[#0A84FF] text-white border-[#0A84FF] shadow-sm shadow-[#0A84FF]/25"
+                                      : "bg-white/5 border-white/10 text-white/60 hover:text-white hover:bg-white/10"
+                                  }`}
+                                  title={`Set duration to ${s} period${s > 1 ? "s" : ""} (${s} hour${s > 1 ? "s" : ""})`}
+                                >
+                                  {s}h
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
         </div>
       ) : (
         <div className="space-y-2.5">
