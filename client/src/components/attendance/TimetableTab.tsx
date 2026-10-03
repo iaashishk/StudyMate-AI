@@ -55,12 +55,12 @@ export interface SlotBlock {
   slotType: "lecture" | "lab" | "tutorial";
   room: string;
   slotIndices: number[];
+  blockId?: string;
 }
 
 /**
  * Universal dynamic block grouping for timetable grids.
- * Whenever consecutive periods belong to the same Lab or Class,
- * they automatically merge into ONE continuous card spanning those periods (e.g. col-span-4 for 4-hour lab).
+ * Works dynamically for ANY duration (1h, 2h, 3h, 4h) and ANY type (Lecture, Lab, Tutorial).
  */
 function getDayBlocks(
   weekday: number,
@@ -75,25 +75,31 @@ function getDayBlocks(
     const slotSubj = slot.subjectId ? String(slot.subjectId) : null;
     const slotType = slot.slotType || "lecture";
     const slotRoom = slot.room || "";
+    const slotBlockId = (slot as any).blockId || null;
 
     const lastBlock = blocks[blocks.length - 1];
 
-    // Merge condition:
+    // Universal Dynamic Merge condition:
     // When mergedView is ON:
-    // 1. Both share the same non-null assigned subject and same slotType (e.g. 2h Lecture or 4h Lab)
-    // 2. OR both are Lab slots with matching subject (both same subject OR both free/unassigned) and same room
+    // 1. Explicit multi-hour blockId match (created by 1h, 2h, 3h, 4h buttons)
+    // 2. OR both share the same non-null assigned subject and same slotType
+    // 3. OR both share matching slotType with matching subject and matching room
     const canMerge =
       mergedView &&
       lastBlock &&
       (
+        // Condition 1: Explicit block ID link
+        (slotBlockId && lastBlock.blockId && slotBlockId === lastBlock.blockId) ||
+        // Condition 2: Both have the same non-null assigned subject and same slotType
         (slotSubj !== null &&
           lastBlock.subjectId !== null &&
           String(lastBlock.subjectId) === slotSubj &&
           lastBlock.slotType === slotType) ||
-        (slotType === "lab" &&
-          lastBlock.slotType === "lab" &&
+        // Condition 3: Matching slotType and matching subject (both null or both same) and matching room
+        (slotType === lastBlock.slotType &&
           String(lastBlock.subjectId || "") === String(slotSubj || "") &&
-          (lastBlock.room || "") === slotRoom)
+          (lastBlock.room || "") === slotRoom &&
+          (slotBlockId !== null || slotType === "lab"))
       );
 
     if (canMerge) {
@@ -103,7 +109,7 @@ function getDayBlocks(
       lastBlock.slotIndices.push(idx);
     } else {
       blocks.push({
-        id: `${weekday}_${idx}`,
+        id: slotBlockId || `${weekday}_${idx}`,
         weekday,
         startSlotIndex: idx,
         endSlotIndex: idx,
@@ -114,6 +120,7 @@ function getDayBlocks(
         slotType,
         room: slotRoom,
         slotIndices: [idx],
+        blockId: slotBlockId,
       });
     }
   }
@@ -333,8 +340,9 @@ export default function TimetableTab() {
   };
 
   /**
-   * Sets the span of a block (e.g. 1h, 2h, 3h, 4h Lab).
-   * Supports expanding to multi-hour labs and smoothly shrinking/reverting accidental clicks.
+   * Sets the span of a block (e.g. 1h, 2h, 3h, 4h).
+   * Works dynamically for ANY duration and ANY type (Lecture, Lab, Tutorial).
+   * Smoothly expands, shrinks, or resets accidental clicks.
    */
   const setBlockSpan = (
     weekday: number,
@@ -344,9 +352,10 @@ export default function TimetableTab() {
   ) => {
     const startIdx = block.startSlotIndex;
     const currentSubjectId = block.subjectId || null;
-    const targetType =
-      forcedType || (targetSpan >= 3 ? "lab" : block.slotType === "lab" && targetSpan > 1 ? "lab" : block.slotType || "lecture");
+    const targetType = forcedType || block.slotType || "lecture";
     const room = block.room || "";
+    // Create an explicit block link ID whenever duration > 1
+    const newBlockId = targetSpan > 1 ? `blk_${weekday}_${startIdx}` : undefined;
 
     if (startIdx + targetSpan > maxSlots) {
       setMaxSlots(Math.min(10, startIdx + targetSpan));
@@ -356,7 +365,7 @@ export default function TimetableTab() {
       const updated = [...prev];
       const limit = Math.min(10, Math.max(maxSlots, startIdx + targetSpan));
 
-      // 1. Assign targetSpan slots
+      // 1. Assign targetSpan slots starting from startIdx
       for (let i = 0; i < targetSpan && startIdx + i < limit; i++) {
         const slotIdx = startIdx + i;
         const periodTiming = getPeriodTiming(slotIdx);
@@ -364,30 +373,34 @@ export default function TimetableTab() {
           (s) => s.weekday === weekday && s.slotIndex === slotIdx
         );
 
+        const slotData = {
+          weekday,
+          slotIndex: slotIdx,
+          startTime: periodTiming.start,
+          endTime: periodTiming.end,
+          subjectId: currentSubjectId,
+          slotType: targetType,
+          room: room,
+          blockId: newBlockId,
+          blockSpan: targetSpan,
+        };
+
         if (existingIdx >= 0) {
           updated[existingIdx] = {
             ...updated[existingIdx],
-            subjectId: currentSubjectId,
-            slotType: targetType,
+            ...slotData,
             room: room || updated[existingIdx].room,
           };
         } else {
-          updated.push({
-            weekday,
-            slotIndex: slotIdx,
-            startTime: periodTiming.start,
-            endTime: periodTiming.end,
-            subjectId: currentSubjectId,
-            slotType: targetType,
-            room,
-          });
+          updated.push(slotData);
         }
       }
 
-      // 2. If shrinking (e.g. user pressed 4h Lab by accident, now clicks 1h, 2h or Split):
+      // 2. If shrinking (e.g. from 4h to 2h, or from 4h to 1h, or from 3h to 1h):
       // Safely reset trailing slots back to regular 1-hour free lecture slots!
-      if (block.span > targetSpan) {
-        for (let i = targetSpan; i < block.span; i++) {
+      const previousSpan = block.span || block.slotIndices.length || 1;
+      if (previousSpan > targetSpan) {
+        for (let i = targetSpan; i < previousSpan; i++) {
           const slotIdx = startIdx + i;
           const periodTiming = getPeriodTiming(slotIdx);
           const existingIdx = updated.findIndex(
@@ -397,8 +410,10 @@ export default function TimetableTab() {
             updated[existingIdx] = {
               ...updated[existingIdx],
               subjectId: null,
-              slotType: "lecture", // reset from lab to standard lecture
+              slotType: "lecture", // reset to default 1h lecture
               room: "",
+              blockId: undefined,
+              blockSpan: 1,
               startTime: periodTiming.start,
               endTime: periodTiming.end,
             };
@@ -407,14 +422,16 @@ export default function TimetableTab() {
       }
 
       // 3. If resetting to 1-hour slot:
-      if (targetSpan === 1 && forcedType) {
+      if (targetSpan === 1) {
         const existingIdx = updated.findIndex(
           (s) => s.weekday === weekday && s.slotIndex === startIdx
         );
         if (existingIdx >= 0) {
           updated[existingIdx] = {
             ...updated[existingIdx],
-            slotType: forcedType,
+            blockId: undefined,
+            blockSpan: 1,
+            ...(forcedType ? { slotType: forcedType } : {}),
           };
         }
       }
@@ -422,10 +439,10 @@ export default function TimetableTab() {
       return updated;
     });
 
-    const typeLabel = targetType === "lab" ? "Lab" : "Class";
+    const typeLabel = targetType === "lab" ? "Lab" : targetType === "tutorial" ? "Tutorial" : "Class";
     showToast(
       targetSpan > 1
-        ? `Combined into ${targetSpan}-hour ${typeLabel} (${targetSpan} spaces)`
+        ? `Combined into ${targetSpan}-hour ${typeLabel} (${targetSpan} periods merged)`
         : `Reset to 1-hour slot`
     );
   };
@@ -444,6 +461,8 @@ export default function TimetableTab() {
             subjectId: null,
             slotType: "lecture",
             room: "",
+            blockId: undefined,
+            blockSpan: 1,
             startTime: periodTiming.start,
             endTime: periodTiming.end,
           };
@@ -877,9 +896,9 @@ export default function TimetableTab() {
                                       : "bg-blue-500/25 text-blue-300 border-blue-500/35"
                                   }`}
                                 >
-                                  {isLab ? <FlaskConical size={10} /> : <BookOpen size={10} />}
+                                  {isLab ? <FlaskConical size={10} /> : isTutorial ? <GraduationCap size={10} /> : <BookOpen size={10} />}
                                   <span>
-                                    {block.span}h (P{block.startSlotIndex + 1}–P{block.endSlotIndex + 1})
+                                    {block.span}h {isLab ? "Lab" : isTutorial ? "Tut" : "Class"} (P{block.startSlotIndex + 1}–P{block.endSlotIndex + 1})
                                   </span>
                                 </span>
                               ) : (
@@ -920,6 +939,8 @@ export default function TimetableTab() {
                                   {isMultiHour
                                     ? isLab
                                       ? `${block.span}-Hour Lab Practical`
+                                      : isTutorial
+                                      ? `${block.span}-Hour Tutorial`
                                       : `${block.span}-Hour Combined Class`
                                     : "Free Slot"}
                                 </option>
@@ -993,30 +1014,26 @@ export default function TimetableTab() {
                           {/* Bottom Row: Duration Adjuster Pills & Split Action */}
                           <div className="pt-2 mt-2 border-t border-white/[0.06] flex items-center justify-between gap-1 flex-wrap">
                             <div className="flex items-center gap-1 text-[9px]">
+                              <span className="text-white/30 text-[9px] mr-0.5">Span:</span>
                               {([1, 2, 3, 4] as const).map((s) => {
                                 const isActive = block.span === s;
-                                const isLabBtn = s === 4;
                                 return (
                                   <button
                                     key={s}
                                     type="button"
-                                    onClick={() =>
-                                      setBlockSpan(wd.day, block, s, isLabBtn ? "lab" : undefined)
-                                    }
-                                    className={`px-1.5 py-0.5 rounded text-[9px] font-bold border transition-all cursor-pointer ${
+                                    onClick={() => setBlockSpan(wd.day, block, s)}
+                                    className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all cursor-pointer ${
                                       isActive
-                                        ? isLabBtn || isLab
-                                          ? "bg-purple-500 text-white border-purple-400 shadow-sm shadow-purple-500/30"
-                                          : "bg-[#0A84FF] text-white border-[#0A84FF]"
+                                        ? isLab
+                                          ? "bg-purple-600 text-white border-purple-500 shadow-sm shadow-purple-600/30"
+                                          : isTutorial
+                                          ? "bg-cyan-500 text-black border-cyan-400 font-extrabold"
+                                          : "bg-[#0A84FF] text-white border-[#0A84FF] shadow-sm shadow-[#0A84FF]/25"
                                         : "bg-white/5 border-white/10 text-white/60 hover:text-white hover:bg-white/10"
                                     }`}
-                                    title={
-                                      s === 4
-                                        ? "Expand to 4-hour Lab (occupies 4 continuous period spaces)"
-                                        : `Set to ${s}-hour duration (${s} period spaces)`
-                                    }
+                                    title={`Set duration to ${s} period${s > 1 ? "s" : ""} (${s} hour${s > 1 ? "s" : ""})`}
                                   >
-                                    {s === 4 ? "4h Lab" : `${s}h`}
+                                    {s}h
                                   </button>
                                 );
                               })}

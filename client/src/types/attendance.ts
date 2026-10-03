@@ -88,6 +88,8 @@ export interface TimetableSlot {
   effectiveFrom?: string;
   effectiveTo?: string | null;
   weekType?: "all" | "A" | "B";
+  blockId?: string;
+  blockSpan?: number;
 }
 
 export interface SemesterInfo {
