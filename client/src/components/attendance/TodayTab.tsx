@@ -578,8 +578,15 @@ export default function TodayTab({ onNavigateTab, pendingCount }: TodayTabProps)
               const subjColor = session.subject?.color || "#0A84FF";
               const blockInfo = getBlockInfo(index);
 
-            // Slot Type Badge: Lecture vs Lab vs Tutorial
-            const slotType = session.slotType || "lecture";
+              const sessionDurationHours = (() => {
+                if (!session.startTime || !session.endTime) return 1;
+                const [sh, sm] = session.startTime.split(":").map(Number);
+                const [eh, em] = session.endTime.split(":").map(Number);
+                const diff = (eh * 60 + (em || 0)) - (sh * 60 + (sm || 0));
+                return Math.max(1, Math.round(diff / 60));
+              })();
+
+              const slotType = session.slotType || "lecture";
             const slotTypeConfig = {
               lab: {
                 label: "LAB / PRACTICAL",
@@ -670,6 +677,7 @@ export default function TodayTab({ onNavigateTab, pendingCount }: TodayTabProps)
                       >
                         <SlotIcon size={11} />
                         {slotTypeConfig.label}
+                        {sessionDurationHours > 1 ? ` · ${sessionDurationHours} HRS` : ""}
                       </span>
 
                       {blockInfo && (

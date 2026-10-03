@@ -71,8 +71,8 @@ export default function AttendancePage() {
                 <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
                   Attendance Tracker
                 </h1>
-                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-[#0A84FF]/15 text-[#0A84FF] border border-[#0A84FF]/25">
-                  SMART BUNKS
+                <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-white/10 text-white/80 border border-white/10">
+                  v2.2
                 </span>
               </div>
               <p className="text-xs text-[#8E8E93]">

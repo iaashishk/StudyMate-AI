@@ -208,10 +208,10 @@ export default function HolidayParserModal({
           </div>
           <div>
             <h3 className="text-lg font-extrabold text-white tracking-tight">
-              Smart Academic Notice &amp; Holiday Scanner
+              Academic Circular &amp; Holiday Importer
             </h3>
             <p className="text-xs text-[#8E8E93]">
-              Intelligently filters gazetted holidays, strips table noise, and excludes non-holiday special days.
+              Upload university holiday notices or academic calendars to sync semester dates and off-days.
             </p>
           </div>
         </div>
@@ -323,10 +323,10 @@ export default function HolidayParserModal({
                 <Info size={16} className="shrink-0 text-blue-400 mt-0.5" />
                 <div className="space-y-1">
                   <p className="font-semibold text-white text-[11px]">
-                    Smart Filter Activated: Excluded {skippedItems.length} Special Celebration Days
+                    Excluded {skippedItems.length} Restricted Celebration Days (Classes Conducted)
                   </p>
                   <p className="text-[10px] text-blue-200/80 leading-relaxed">
-                    Notice states <em>"there would be no public holiday on these dates"</em> (e.g. Netaji Jayanti, Sant Ravidas Jayanti). Classes run normally, so they have been excluded to keep your attendance stats accurate.
+                    Notice states <em>"there would be no public holiday on these dates"</em> (e.g. Netaji Jayanti, Sant Ravidas Jayanti). Classes run normally, so they have been excluded to keep attendance accurate.
                   </p>
                 </div>
               </div>

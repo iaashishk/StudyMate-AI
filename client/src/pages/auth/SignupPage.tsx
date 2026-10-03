@@ -27,10 +27,10 @@ const schema = z.object({
 type FormData = z.infer<typeof schema>;
 
 const features = [
-  { icon: Zap, label: "Smart adaptive scheduling engine" },
-  { icon: FolderGit2, label: "Resource vault: documents, videos & reading" },
-  { icon: Brain, label: "Integrated study notes & syllabus tracking" },
-  { icon: BarChart2, label: "Real-time mastery & streak tracker" },
+  { icon: Zap, label: "v2.2 Academic Sync: Timetable ⇄ Holidays ⇄ Attendance" },
+  { icon: FolderGit2, label: "Dynamic Routine: 4h labs & classes in single blocks" },
+  { icon: Brain, label: "Zero Timezone Drift: Civil-date sync for IST" },
+  { icon: BarChart2, label: "Safe Bunk Planner & live shortage alerts" },
 ];
 
 export default function SignupPage() {
@@ -105,7 +105,7 @@ export default function SignupPage() {
         </div>
 
         <div className="relative z-10 pt-6 border-t border-white/5 flex items-center justify-between text-xs text-slate-500">
-          <span>v2.0 Production</span>
+          <span>v2.2 Production</span>
           <span>Aashish Kumar</span>
         </div>
       </div>
@@ -119,8 +119,16 @@ export default function SignupPage() {
           className="w-full max-w-md"
         >
           {/* Mobile logo */}
-          <div className="flex justify-center mb-8 md:hidden">
+          <div className="flex justify-center mb-6 md:hidden">
             <Logo size={42} showTagline={false} textClassName="text-2xl" />
+          </div>
+
+          {/* v2.2 Upgrade Announcement Banner */}
+          <div className="mb-4 flex items-center justify-center">
+            <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 text-[11px] font-semibold">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span>v2.2 Upgraded: Academic Sync &amp; Dynamic Routine</span>
+            </span>
           </div>
 
           {/* Form card */}
