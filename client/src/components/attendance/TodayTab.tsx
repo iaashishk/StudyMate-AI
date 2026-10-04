@@ -47,6 +47,7 @@ export default function TodayTab({ onNavigateTab, pendingCount }: TodayTabProps)
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [holidayDialogOpen, setHolidayDialogOpen] = useState(false);
   const [holidayLabel, setHolidayLabel] = useState("");
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   const showUndoToast = (
     msg: string,
@@ -280,6 +281,22 @@ export default function TodayTab({ onNavigateTab, pendingCount }: TodayTabProps)
     }
   };
 
+  // Clear / Reset all marks for the current date
+  const handleClearDayMarks = async () => {
+    setActionLoading(true);
+    try {
+      await attendanceApi.clearDayMarks(currentDate);
+      showUndoToast(`Attendance marks cleared for ${currentDate}`);
+      setShowClearConfirm(false);
+      await loadDay(currentDate);
+    } catch (err) {
+      console.error("Clear marks failed", err);
+      showUndoToast("Failed to clear marks.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // Global Keyboard Shortcuts (P = Present, B/A = Bunk/Absent, C = Cancelled on first unmarked session)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -460,6 +477,18 @@ export default function TodayTab({ onNavigateTab, pendingCount }: TodayTabProps)
               <Plus size={14} />
               <span>Extra Class</span>
             </button>
+
+            {(presentCount > 0 || absentCount > 0 || cancelledCount > 0 || data?.isHoliday) && (
+              <button
+                onClick={() => setShowClearConfirm(true)}
+                disabled={actionLoading}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-rose-400 text-xs font-medium transition-colors cursor-pointer"
+                title="Clear all marks & reset this date to unmarked"
+              >
+                <RotateCcw size={13} />
+                <span>Reset Day</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -665,6 +694,11 @@ export default function TodayTab({ onNavigateTab, pendingCount }: TodayTabProps)
                       <h4 className="font-extrabold text-white text-base sm:text-lg tracking-tight">
                         {session.subject?.name || "Free Slot"}
                       </h4>
+                      {session.subject?.shortName && (
+                        <span className="text-[11px] font-mono font-bold text-white bg-white/10 px-2 py-0.5 rounded-lg border border-white/15">
+                          {session.subject.shortName}
+                        </span>
+                      )}
                       {session.subject?.code && (
                         <span className="text-[11px] font-mono text-[#8E8E93] bg-white/5 px-2 py-0.5 rounded-lg border border-white/5">
                           {session.subject.code}
@@ -816,6 +850,43 @@ export default function TodayTab({ onNavigateTab, pendingCount }: TodayTabProps)
                 className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold cursor-pointer transition-colors"
               >
                 🌴 Mark Holiday & Cancel Classes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Clear Marks Dialog */}
+      {showClearConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="w-full max-w-sm bg-[#1C1C1E] border border-white/15 rounded-3xl p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-rose-500/15 border border-rose-500/25 flex items-center justify-center text-rose-400">
+                <RotateCcw size={20} />
+              </div>
+              <div>
+                <h4 className="font-bold text-white text-base">Reset Day Attendance?</h4>
+                <p className="text-xs text-[#8E8E93]">{dayName} ({currentDate})</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-white/70 leading-relaxed">
+              This will remove all Present, Bunked, or Cancelled marks recorded for this date and restore scheduled classes to an unmarked state.
+            </p>
+
+            <div className="flex items-center gap-2.5 pt-1">
+              <button
+                onClick={() => setShowClearConfirm(false)}
+                className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/80 text-xs font-semibold cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleClearDayMarks}
+                disabled={actionLoading}
+                className="flex-1 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold cursor-pointer transition-colors shadow-lg shadow-rose-500/25 disabled:opacity-50"
+              >
+                {actionLoading ? "Clearing..." : "Reset All Marks"}
               </button>
             </div>
           </div>

@@ -19,7 +19,18 @@ const attendanceSubjectSchema = new Schema(
       default: "",
       trim: true,
     },
+    shortName: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: 12,
+    },
     teacher: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    defaultRoom: {
       type: String,
       default: "",
       trim: true,
@@ -109,6 +120,14 @@ const timetableSlotSchema = new Schema(
       type: String,
       enum: ["all", "A", "B"],
       default: "all",
+    },
+    blockId: {
+      type: String,
+      default: null,
+    },
+    blockSpan: {
+      type: Number,
+      default: 1,
     },
   },
   { timestamps: true }

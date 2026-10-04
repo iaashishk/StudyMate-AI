@@ -247,9 +247,16 @@ export default function SubjectsTab({ onRefreshStats }: SubjectsTabProps) {
                           {subj.name}
                         </h4>
                       </div>
-                      {subj.code && (
-                        <p className="text-[11px] font-mono text-[#8E8E93] pl-4.5">
-                          {subj.code} {subj.teacher ? `• ${subj.teacher}` : ""}
+                      {(subj.code || subj.shortName || subj.teacher || subj.defaultRoom) && (
+                        <p className="text-[11px] font-mono text-[#8E8E93] pl-4.5 flex items-center gap-1.5 flex-wrap">
+                          {subj.shortName && (
+                            <span className="text-[10px] font-bold text-white/90 bg-white/10 px-1.5 py-0.5 rounded border border-white/10">
+                              {subj.shortName}
+                            </span>
+                          )}
+                          {subj.code && <span>{subj.code}</span>}
+                          {subj.teacher && <span>• {subj.teacher}</span>}
+                          {subj.defaultRoom && <span className="text-white/50">• {subj.defaultRoom}</span>}
                         </p>
                       )}
                     </div>

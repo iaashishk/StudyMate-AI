@@ -63,7 +63,12 @@ export interface ParsedTimetableSlotResult {
   slotType: "lecture" | "lab" | "tutorial";
   rawText: string;
   subjectName: string;
+  shortName?: string;
+  code?: string;
+  teacher?: string;
   matchedSubjectId: string | null;
+  blockId?: string;
+  blockSpan?: number;
 }
 
 export interface ParsedTimetableDocResult {

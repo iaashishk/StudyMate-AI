@@ -8,10 +8,13 @@ import {
   getTimetable,
   saveTimetable,
   clearTimetable,
+  parseAiTimetable,
   getDaySessions,
   markAttendance,
   bulkMarkDayPresent,
   markDayHoliday,
+  clearDayAttendanceMarks,
+  parseAiHolidayCalendar,
   addExtraSession,
   deleteAttendanceEntry,
   getAttendanceStats,
@@ -53,12 +56,14 @@ router.delete("/subjects/:id", deleteAttendanceSubject);
 router.get("/timetable", getTimetable);
 router.put("/timetable", saveTimetable);
 router.delete("/timetable", clearTimetable);
+router.post("/timetable/parse-ai", parseAiTimetable);
 
 // Day Sessions & Marking
 router.get("/day/:date", getDaySessions);
 router.put("/mark", markAttendance);
 router.post("/day/:date/bulk-present", bulkMarkDayPresent);
 router.post("/day/:date/holiday", markDayHoliday);
+router.delete("/day/:date/marks", clearDayAttendanceMarks);
 router.post("/extra", addExtraSession);
 router.delete("/entry/:id", deleteAttendanceEntry);
 
@@ -95,6 +100,7 @@ router.post("/holidays", addHoliday);
 router.delete("/holidays", clearAllHolidays);
 router.delete("/holidays/:id", deleteHoliday);
 router.post("/holidays/auto-populate", autoPopulateHolidays);
+router.post("/holidays/parse-ai", parseAiHolidayCalendar);
 router.post("/reset", resetSemester);
 
 // Data Export

@@ -155,7 +155,9 @@ export const createAttendanceSubject = asyncHandler(async (req, res) => {
     userId: req.user._id,
     name: name.trim(),
     code: (code || "").trim(),
+    shortName: (req.body.shortName || "").trim().slice(0, 12),
     teacher: (teacher || "").trim(),
+    defaultRoom: (req.body.defaultRoom || "").trim(),
     color: color || "#0A84FF",
     minPercent: minPercent ? Number(minPercent) : settings.defaultMinPercent,
     openingAttended: attended,
@@ -210,7 +212,9 @@ export const updateAttendanceSubject = asyncHandler(async (req, res) => {
 
   if (name !== undefined) subject.name = name.trim();
   if (code !== undefined) subject.code = (code || "").trim();
+  if (req.body.shortName !== undefined) subject.shortName = (req.body.shortName || "").trim().slice(0, 12);
   if (teacher !== undefined) subject.teacher = (teacher || "").trim();
+  if (req.body.defaultRoom !== undefined) subject.defaultRoom = (req.body.defaultRoom || "").trim();
   if (color !== undefined) subject.color = color;
   if (minPercent !== undefined) subject.minPercent = Number(minPercent);
   if (archivedAt !== undefined) subject.archivedAt = archivedAt;
@@ -273,13 +277,24 @@ export const getTimetable = asyncHandler(async (req, res) => {
 
   // Find all slots effective for targetDate:
   // effectiveFrom <= targetDate AND (effectiveTo == null OR effectiveTo >= targetDate)
-  const slots = await TimetableSlot.find({
+  let slots = await TimetableSlot.find({
     userId: req.user._id,
     effectiveFrom: { $lte: targetDate },
     $or: [{ effectiveTo: null }, { effectiveTo: { $gte: targetDate } }],
   })
-    .populate("subjectId", "name code color minPercent")
+    .populate("subjectId", "name code color minPercent shortName defaultRoom teacher")
     .sort({ weekday: 1, slotIndex: 1 });
+
+  // Intelligent Fallback: If no slots match for this date because effectiveFrom was set later,
+  // use the active timetable (effectiveTo: null) so timetable is always accessible across the semester.
+  if (slots.length === 0) {
+    slots = await TimetableSlot.find({
+      userId: req.user._id,
+      effectiveTo: null,
+    })
+      .populate("subjectId", "name code color minPercent shortName defaultRoom teacher")
+      .sort({ weekday: 1, slotIndex: 1 });
+  }
 
   return res.status(200).json(
     new ApiResponse(
@@ -297,7 +312,8 @@ export const getTimetable = asyncHandler(async (req, res) => {
 
 export const saveTimetable = asyncHandler(async (req, res) => {
   const { slots, applyFrom } = req.body;
-  const effectiveDate = applyFrom || toDateString();
+  const semester = await getOrCreateSemester(req.user._id);
+  const effectiveDate = applyFrom || semester.startDate || toDateString();
 
   if (!Array.isArray(slots)) {
     throw new ApiError(400, "Slots array is required");
@@ -334,6 +350,8 @@ export const saveTimetable = asyncHandler(async (req, res) => {
     endTime: s.endTime || "10:00",
     room: s.room || "",
     slotType: s.slotType || "lecture",
+    blockId: s.blockId || null,
+    blockSpan: Number(s.blockSpan) || 1,
     effectiveFrom: effectiveDate,
     effectiveTo: null,
     weekType: s.weekType || "all",
@@ -361,6 +379,321 @@ export const clearTimetable = asyncHandler(async (req, res) => {
   );
 });
 
+/**
+ * 2b. AI Timetable Vision Extraction (Gemini Multimodal Vision)
+ */
+export const parseAiTimetable = asyncHandler(async (req, res) => {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return res.status(503).json({ success: false, error: "AI not configured", fallback: true });
+  }
+
+  const { imageBase64, mimeType } = req.body;
+  if (!imageBase64 || !mimeType) {
+    throw new ApiError(400, "imageBase64 and mimeType are required");
+  }
+
+  const prompt = `You are a precision timetable parsing system designed to extract university class schedules into structured JSON with 100% fidelity.
+Analyze this timetable image with extreme care and accuracy.
+
+CRITICAL INSTRUCTIONS:
+
+1. MASTER TIMING GRID & PERIOD SLOTS:
+- Do NOT include LUNCH, recess, interval, or tea breaks in the "timings" slot array! Skip the LUNCH column completely.
+- Period slots must be consecutive integers starting from 1 (1, 2, 3, 4, 5, 6, 7, 8).
+- Morning periods (before lunch) are Slots 1 to 4:
+  - Slot 1: 09:00 - 09:55
+  - Slot 2: 09:55 - 10:50
+  - Slot 3: 10:50 - 11:45
+  - Slot 4: 11:45 - 12:40
+- Afternoon periods (after lunch, 14:30 onwards) are Slots 5 to 8:
+  - When column headers show combined 2-hour ranges like "2:30-4:20" and "4:25-6:15", break them into standard sequential period slots:
+    - Slot 5: 14:30 - 15:25
+    - Slot 6: 15:25 - 16:20
+    - Slot 7: 16:25 - 17:20
+    - Slot 8: 17:20 - 18:15
+  - NEVER output overlapping start/end times in the "timings" array. Each slot must be strictly sequential!
+
+2. MULTI-PERIOD DURATION & SLOTS ARRAY:
+- A 2-hour lecture block occupying 09:00-10:50 has slots: [1, 2].
+- A 2-hour lecture block occupying 10:50-12:40 has slots: [3, 4].
+- A 4-hour morning lab block occupying 09:00-12:40 has slots: [1, 2, 3, 4].
+- A 2-hour afternoon class occupying 14:30-16:20 has slots: [5, 6].
+- A 2-hour afternoon/evening class occupying 16:25-18:15 has slots: [7, 8].
+- An afternoon 4-hour lab occupying 14:30-18:15 has slots: [5, 6, 7, 8].
+
+3. CORRELATE ROOMS FROM HEADER INSTRUCTIONS:
+- Check header text like "(Monday:LT04), Tuesday_Forenoon:CSA304), Tuesday_Afternoon:CSA305), Wednesday_afternoon:303".
+- Monday classes are in room "LT04".
+- Tuesday morning classes (slots 1-4) are in room "CSA304".
+- Tuesday afternoon classes (slots 5-8) are in room "CSA305".
+- Wednesday afternoon classes (slots 5-8) are in room "303".
+- Labs are in room "Lab" or "CCIH" as indicated in cells.
+- Rooms (like "LT04", "CSA304", "CSA305", "303") are NOT subject course codes! Do NOT put room names in "code"! If no course code like MCA-101 is explicitly written, leave "code" empty ("").
+
+4. CORRELATE SUBJECTS, SHORT NAMES & FACULTY FROM LEGEND:
+- Read the faculty/subject legend at the bottom or margin (e.g. "Dr. Manvi: Cloud Computing, Dr. Manjeet: DS & DS Lab, Ms. Kiran: Computer Networks, Dr. Vedpal: Java & Java Lab, Ms. Palak: DBMS, Ms. Jyoti & Ms. Reena DBMS Lab").
+- Use clean, full subject names (e.g. "Cloud Computing", "Data Structure", "Computer Networks", "Java Programming", "Data Base Management System", "Data Structure Lab", "Java Programming Lab", "Data Base Management System Lab").
+- "shortName" must be the standard abbreviation: "CC", "DS", "CN", "Java", "DBMS", "DS Lab", "Java Lab", "DBMS Lab".
+- For batch-split lab cells (e.g. "Data Structure Lab (Batch 1/2)... JAVA Programming Lab (Batch 2/2)"), choose the primary lab subject and DO NOT include "Batch 1/2" or raw teacher names in the subject title.
+- "type" must be "lab" for labs/practicals, and "lecture" for normal lectures. DO NOT label lectures as labs!
+
+Return ONLY valid JSON matching this schema:
+{
+  "timings": [
+    {"slot": 1, "start": "09:00", "end": "09:55"},
+    {"slot": 2, "start": "09:55", "end": "10:50"},
+    {"slot": 3, "start": "10:50", "end": "11:45"},
+    {"slot": 4, "start": "11:45", "end": "12:40"},
+    {"slot": 5, "start": "14:30", "end": "15:25"},
+    {"slot": 6, "start": "15:25", "end": "16:20"},
+    {"slot": 7, "start": "16:25", "end": "17:20"},
+    {"slot": 8, "start": "17:20", "end": "18:15"}
+  ],
+  "schedule": [
+    {
+      "day": "Monday",
+      "classes": [
+        {
+          "slots": [1, 2],
+          "subject": "Data Base Management System",
+          "code": "",
+          "shortName": "DBMS",
+          "type": "lecture",
+          "room": "LT04",
+          "teacher": "Ms. Palak"
+        }
+      ]
+    }
+  ]
+}`;
+
+  let cleanMime = (mimeType || "").toLowerCase().trim();
+  if (cleanMime.includes("png")) cleanMime = "image/png";
+  else if (cleanMime.includes("webp")) cleanMime = "image/webp";
+  else cleanMime = "image/jpeg";
+
+  const candidateModels = [
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite",
+    "gemini-flash-lite-latest",
+    "gemini-2.5-flash-lite",
+    "gemini-pro-latest",
+    "gemini-2.5-pro",
+    "gemini-3.8-flash",
+    "gemini-3.7-flash",
+    "gemini-3.5-flash",
+  ];
+  let lastError = null;
+
+  for (const modelName of candidateModels) {
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
+                  { text: prompt },
+                  {
+                    inlineData: {
+                      mimeType: cleanMime,
+                      data: imageBase64,
+                    },
+                  },
+                ],
+              },
+            ],
+            generationConfig: {
+              responseMimeType: "application/json",
+              temperature: 0.1,
+              maxOutputTokens: 8192,
+            },
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errText = await response.text();
+        console.warn(`Gemini model ${modelName} HTTP ${response.status}:`, errText);
+        lastError = new Error(`Model ${modelName} HTTP ${response.status}: ${errText}`);
+        continue;
+      }
+
+      const data = await response.json();
+      const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      const jsonText = rawText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
+
+      let parsed;
+      try {
+        parsed = JSON.parse(jsonText);
+      } catch {
+        console.error("Gemini returned non-JSON:", rawText.slice(0, 500));
+        continue;
+      }
+
+      return res.status(200).json({
+        success: true,
+        modelUsed: modelName,
+        timings: parsed.timings || [],
+        schedule: parsed.schedule || [],
+      });
+    } catch (err) {
+      lastError = err;
+      console.warn(`Gemini model ${modelName} call failed:`, err.message);
+    }
+  }
+
+  return res.status(502).json({
+    success: false,
+    error: lastError?.message || "AI timetable extraction unavailable. Falling back to OCR.",
+    fallback: true,
+  });
+});
+
+/**
+ * Gemini Vision AI Academic Calendar & Holiday Parser
+ * Extracts holidays, vacations, restricted holidays, and semester date boundaries with 100% precision.
+ */
+export const parseAiHolidayCalendar = asyncHandler(async (req, res) => {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return res.status(503).json({ success: false, error: "AI not configured", fallback: true });
+  }
+
+  const { imageBase64, mimeType } = req.body;
+  if (!imageBase64 || !mimeType) {
+    throw new ApiError(400, "imageBase64 and mimeType are required");
+  }
+
+  const prompt = `You are a precision academic calendar and university holiday list parser.
+Analyze this image or circular document and extract all holiday dates and academic schedule boundaries into structured JSON.
+
+CRITICAL INSTRUCTIONS:
+1. HOLIDAYS & OFF-DAYS:
+- Extract all Gazetted Holidays, Public Holidays, University Holidays, and Vacation periods.
+- Format all dates in strict 'YYYY-MM-DD' ISO format (e.g. '2026-01-26').
+- If a holiday spans multiple consecutive days (e.g. '20 Oct to 24 Oct'), generate an entry for EACH day in that range.
+- Assign appropriate category: 'gazetted' (mandatory off-day), 'restricted' (restricted / optional holiday), 'special_day' (celebration/observance where classes are held).
+- Set isOffDay: true for days when college/classes are closed; false for days where classes are held.
+
+2. SEMESTER DATES & VARIANTS:
+- Detect the semester start date ('semesterStartDate') and end date ('semesterEndDate') if mentioned.
+- If multiple columns exist (e.g. 1st Sem Freshers vs 3rd-7th Sem), populate 'semesterDateVariants'.
+
+Return ONLY valid JSON matching this schema:
+{
+  "semesterStartDate": "YYYY-MM-DD or null",
+  "semesterEndDate": "YYYY-MM-DD or null",
+  "semesterName": "string or null",
+  "holidays": [
+    {
+      "date": "YYYY-MM-DD",
+      "label": "Name of holiday (e.g. Republic Day)",
+      "category": "gazetted",
+      "isOffDay": true
+    }
+  ],
+  "semesterDateVariants": [
+    {
+      "label": "1st Sem (Fresh Batch)",
+      "shortLabel": "1st Sem",
+      "startDate": "YYYY-MM-DD",
+      "endDate": "YYYY-MM-DD"
+    }
+  ]
+}`;
+
+  let cleanMime = (mimeType || "").toLowerCase().trim();
+  if (cleanMime.includes("png")) cleanMime = "image/png";
+  else if (cleanMime.includes("webp")) cleanMime = "image/webp";
+  else cleanMime = "image/jpeg";
+
+  const candidateModels = [
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite",
+    "gemini-flash-lite-latest",
+    "gemini-2.5-flash-lite",
+    "gemini-pro-latest",
+    "gemini-2.5-pro",
+    "gemini-3.8-flash",
+  ];
+  let lastError = null;
+
+  for (const modelName of candidateModels) {
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
+                  { text: prompt },
+                  {
+                    inlineData: {
+                      mimeType: cleanMime,
+                      data: imageBase64,
+                    },
+                  },
+                ],
+              },
+            ],
+            generationConfig: {
+              responseMimeType: "application/json",
+              temperature: 0.1,
+              maxOutputTokens: 8192,
+            },
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errText = await response.text();
+        console.warn(`Gemini holiday model ${modelName} HTTP ${response.status}:`, errText);
+        lastError = new Error(`Model ${modelName} HTTP ${response.status}: ${errText}`);
+        continue;
+      }
+
+      const data = await response.json();
+      const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      const jsonText = rawText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
+
+      let parsed;
+      try {
+        parsed = JSON.parse(jsonText);
+      } catch {
+        console.error("Gemini returned non-JSON for holiday parse:", rawText.slice(0, 500));
+        continue;
+      }
+
+      return res.status(200).json({
+        success: true,
+        modelUsed: modelName,
+        holidays: parsed.holidays || [],
+        semesterStartDate: parsed.semesterStartDate || null,
+        semesterEndDate: parsed.semesterEndDate || null,
+        semesterName: parsed.semesterName || null,
+        semesterDateVariants: parsed.semesterDateVariants || [],
+      });
+    } catch (err) {
+      lastError = err;
+      console.warn(`Gemini holiday model ${modelName} call failed:`, err.message);
+    }
+  }
+
+  return res.status(502).json({
+    success: false,
+    error: lastError?.message || "AI holiday calendar extraction unavailable. Falling back to OCR.",
+    fallback: true,
+  });
+});
+
 // ── 3. DAY SESSIONS & LIVE MARKING (FR-A1 to FR-A9, FR-K2) ───────────────────
 export const getDaySessions = asyncHandler(async (req, res) => {
   const date = req.params.date || toDateString();
@@ -371,21 +704,34 @@ export const getDaySessions = asyncHandler(async (req, res) => {
   const holiday = await Holiday.findOne({ userId: req.user._id, date });
 
   // Get scheduled timetable slots effective on this date
-  const slots = await TimetableSlot.find({
+  let slots = await TimetableSlot.find({
     userId: req.user._id,
     weekday,
     effectiveFrom: { $lte: date },
     $or: [{ effectiveTo: null }, { effectiveTo: { $gte: date } }],
     subjectId: { $ne: null },
   })
-    .populate("subjectId", "name code color minPercent openingAttended openingConducted")
+    .populate("subjectId", "name code color minPercent openingAttended openingConducted shortName defaultRoom teacher")
     .sort({ slotIndex: 1 });
+
+  // Intelligent Fallback: If no slots match for past dates (e.g. user added timetable later than semester start date),
+  // fallback to active slots (effectiveTo: null) so user can view & mark past dates seamlessly!
+  if (slots.length === 0) {
+    slots = await TimetableSlot.find({
+      userId: req.user._id,
+      weekday,
+      effectiveTo: null,
+      subjectId: { $ne: null },
+    })
+      .populate("subjectId", "name code color minPercent openingAttended openingConducted shortName defaultRoom teacher")
+      .sort({ slotIndex: 1 });
+  }
 
   // Get all attendance entries recorded for this date
   const existingEntries = await AttendanceEntry.find({
     userId: req.user._id,
     date,
-  }).populate("subjectId", "name code color minPercent openingAttended openingConducted");
+  }).populate("subjectId", "name code color minPercent openingAttended openingConducted shortName defaultRoom teacher");
 
   // Fetch all user's subjects to compute live bunk badges
   const allSubjects = await AttendanceSubject.find({
@@ -616,13 +962,22 @@ export const bulkMarkDayPresent = asyncHandler(async (req, res) => {
 
   const weekday = getWeekday(date);
 
-  const slots = await TimetableSlot.find({
+  let slots = await TimetableSlot.find({
     userId: req.user._id,
     weekday,
     effectiveFrom: { $lte: date },
     $or: [{ effectiveTo: null }, { effectiveTo: { $gte: date } }],
     subjectId: { $ne: null },
   });
+
+  if (slots.length === 0) {
+    slots = await TimetableSlot.find({
+      userId: req.user._id,
+      weekday,
+      effectiveTo: null,
+      subjectId: { $ne: null },
+    });
+  }
 
   const updatedEntries = [];
 
@@ -673,13 +1028,22 @@ export const markDayHoliday = asyncHandler(async (req, res) => {
   }
 
   // 2. Mark all scheduled sessions on that day as 'cancelled' (FR-A6)
-  const slots = await TimetableSlot.find({
+  let slots = await TimetableSlot.find({
     userId: req.user._id,
     weekday,
     effectiveFrom: { $lte: date },
     $or: [{ effectiveTo: null }, { effectiveTo: { $gte: date } }],
     subjectId: { $ne: null },
   });
+
+  if (slots.length === 0) {
+    slots = await TimetableSlot.find({
+      userId: req.user._id,
+      weekday,
+      effectiveTo: null,
+      subjectId: { $ne: null },
+    });
+  }
 
   for (const slot of slots) {
     let entry = await AttendanceEntry.findOne({
@@ -705,6 +1069,28 @@ export const markDayHoliday = asyncHandler(async (req, res) => {
 
   return res.status(200).json(
     new ApiResponse(200, { holiday }, "Day marked as holiday and sessions cancelled")
+  );
+});
+
+export const clearDayAttendanceMarks = asyncHandler(async (req, res) => {
+  const { date } = req.params;
+
+  const result = await AttendanceEntry.deleteMany({
+    userId: req.user._id,
+    date,
+  });
+
+  await Holiday.deleteMany({
+    userId: req.user._id,
+    date,
+  });
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      { deletedCount: result.deletedCount },
+      `Cleared all attendance marks and holiday status for ${date}`
+    )
   );
 });
 
@@ -856,12 +1242,21 @@ export const getPendingDays = asyncHandler(async (req, res) => {
       const weekday = getWeekday(currentDate);
 
       // Filter slots active on this day in memory
-      const scheduledSlots = allSlots.filter((slot) => {
+      let scheduledSlots = allSlots.filter((slot) => {
         if (slot.weekday !== weekday) return false;
         if (slot.effectiveFrom && slot.effectiveFrom > currentDate) return false;
         if (slot.effectiveTo && slot.effectiveTo < currentDate) return false;
         return true;
       });
+
+      // Intelligent Fallback: If no slots match for past dates, fallback to active slots (effectiveTo: null)
+      if (scheduledSlots.length === 0) {
+        scheduledSlots = allSlots.filter((slot) => {
+          if (slot.weekday !== weekday) return false;
+          if (slot.effectiveTo !== null && slot.effectiveTo !== undefined) return false;
+          return true;
+        });
+      }
 
       if (scheduledSlots.length > 0) {
         const markedSet = markedSlotsByDate.get(currentDate) || new Set();
@@ -936,13 +1331,24 @@ export const previewBackfill = asyncHandler(async (req, res) => {
     if (!holidayDates.has(currentDate)) {
       const weekday = getWeekday(currentDate);
 
-      const slots = await TimetableSlot.find({
+      let slots = await TimetableSlot.find({
         userId: req.user._id,
         weekday,
         effectiveFrom: { $lte: currentDate },
         $or: [{ effectiveTo: null }, { effectiveTo: { $gte: currentDate } }],
         subjectId: { $ne: null },
-      }).populate("subjectId", "name code color");
+      }).populate("subjectId", "name code color shortName defaultRoom teacher");
+
+      // Intelligent Fallback: If no slots match for past dates (e.g. user added timetable later than semester start date),
+      // fallback to active slots (effectiveTo: null) so backfill can generate past sessions seamlessly!
+      if (slots.length === 0) {
+        slots = await TimetableSlot.find({
+          userId: req.user._id,
+          weekday,
+          effectiveTo: null,
+          subjectId: { $ne: null },
+        }).populate("subjectId", "name code color shortName defaultRoom teacher");
+      }
 
       for (const slot of slots) {
         generatedSessions.push({
@@ -1670,10 +2076,10 @@ export const resetSemester = asyncHandler(async (req, res) => {
 export const exportAttendanceData = asyncHandler(async (req, res) => {
   const subjects = await AttendanceSubject.find({ userId: req.user._id });
   const entries = await AttendanceEntry.find({ userId: req.user._id })
-    .populate("subjectId", "name code")
+    .populate("subjectId", "name code shortName")
     .sort({ date: -1 });
   const slots = await TimetableSlot.find({ userId: req.user._id })
-    .populate("subjectId", "name code");
+    .populate("subjectId", "name code shortName");
 
   return res.status(200).json(
     new ApiResponse(

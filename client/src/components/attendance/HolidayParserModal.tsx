@@ -47,6 +47,43 @@ export default function HolidayParserModal({
 
   if (!isOpen) return null;
 
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const res = reader.result as string;
+      const base64 = res.split(",")[1];
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+async function pdfPageToBase64(file: File): Promise<{ base64: string; mimeType: string }> {
+  try {
+    const pdfjsLib = await import("pdfjs-dist");
+    if (pdfjsLib?.GlobalWorkerOptions) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+    }
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    const page = await pdf.getPage(1);
+    const viewport = page.getViewport({ scale: 2.5 });
+    const canvas = document.createElement("canvas");
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Canvas context unavailable");
+    await (page as any).render({ canvasContext: ctx, viewport } as any).promise;
+    const dataUrl = canvas.toDataURL("image/png");
+    return { base64: dataUrl.split(",")[1], mimeType: "image/png" };
+  } catch {
+    const rawB64 = await fileToBase64(file);
+    return { base64: rawB64, mimeType: "application/pdf" };
+  }
+}
+
   const handleFileDrop = (e: React.DragEvent) => {
     e.preventDefault();
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
@@ -58,9 +95,66 @@ export default function HolidayParserModal({
     setFileName(selectedFile.name);
     setError(null);
     setExtracting(true);
-    setExtractionProgress({ stage: "reading", progress: 10, message: "Reading circular text…" });
+    setExtractionProgress({ stage: "reading", progress: 10, message: "Reading circular document…" });
 
     try {
+      const isPdf = selectedFile.type === "application/pdf" || selectedFile.name.toLowerCase().endsWith(".pdf");
+
+      let imageBase64: string = "";
+      let mimeType: string = "image/jpeg";
+
+      if (isPdf) {
+        setExtractionProgress({ stage: "reading", progress: 20, message: "Rendering PDF circular for AI analysis…" });
+        const res = await pdfPageToBase64(selectedFile);
+        imageBase64 = res.base64;
+        mimeType = res.mimeType;
+      } else {
+        imageBase64 = await fileToBase64(selectedFile);
+        mimeType = selectedFile.type || "image/jpeg";
+      }
+
+      setExtractionProgress({ stage: "ocr", progress: 40, message: "AI extracting holidays & academic calendar…" });
+
+      // Try Gemini AI Vision extraction first
+      try {
+        const aiRes = await attendanceApi.parseAiHolidayCalendar(imageBase64, mimeType);
+        if (aiRes.success && (aiRes.holidays?.length > 0 || aiRes.semesterStartDate)) {
+          const holidays: ParsedHolidayResult[] = (aiRes.holidays || []).map((h) => ({
+            date: h.date,
+            label: h.label,
+            rawLine: h.label,
+            category: h.category || "gazetted",
+            categoryLabel: h.category === "restricted" ? "Restricted (RH)" : "Gazetted Holiday",
+            isOffDay: h.isOffDay !== false,
+          }));
+
+          const doc: ParsedAcademicDocResult = {
+            holidays: holidays.filter((h) => h.isOffDay),
+            allExtractedItems: holidays,
+            skippedSpecialDays: holidays.filter((h) => !h.isOffDay),
+            semesterStartDate: aiRes.semesterStartDate || undefined,
+            semesterEndDate: aiRes.semesterEndDate || undefined,
+            semesterName: aiRes.semesterName || undefined,
+            semesterDateVariants: aiRes.semesterDateVariants?.map((v) => ({
+              label: v.label,
+              shortLabel: v.shortLabel,
+              startDate: v.startDate,
+              endDate: v.endDate,
+            })),
+          };
+
+          setParsedDoc(doc);
+          setItems(holidays);
+          setSelectedDates(new Set(doc.holidays.map((h) => h.date)));
+          setExtracting(false);
+          return;
+        }
+      } catch (aiErr) {
+        console.warn("AI holiday parse unavailable, falling back to OCR text parser:", aiErr);
+      }
+
+      // OCR / text extraction fallback
+      setExtractionProgress({ stage: "reading", progress: 60, message: "Extracting text with OCR fallback…" });
       const { text } = await extractSyllabusFromFile(selectedFile, (p) => {
         setExtractionProgress(p);
       });
@@ -79,9 +173,6 @@ export default function HolidayParserModal({
         setError(
           "We read the file, but could not detect holiday dates. Ensure the circular has clear dates like '26 January' or '05/01/2026'."
         );
-      } else if (allItems.length === 0 && doc.semesterStartDate) {
-        // Academic calendar doc — only semester dates were extracted, no holidays
-        setError(null); // Not an error, but let the semesterStartDate card show
       }
     } catch (err: unknown) {
       console.error("Extraction error", err);
@@ -193,35 +284,39 @@ export default function HolidayParserModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="w-full max-w-2xl bg-[#18181B] border border-white/10 rounded-3xl p-6 shadow-2xl relative max-h-[92vh] overflow-y-auto space-y-5">
-        <button
-          onClick={onClose}
-          className="absolute right-5 top-5 p-1.5 rounded-full bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition-colors cursor-pointer"
-        >
-          <X size={18} />
-        </button>
+      <div className="w-full max-w-2xl bg-[#18181B] border border-white/10 rounded-3xl shadow-2xl relative max-h-[92vh] flex flex-col overflow-hidden">
+        {/* Fixed Header */}
+        <div className="p-6 pb-4 shrink-0 border-b border-white/[0.08] relative">
+          <button
+            onClick={onClose}
+            className="absolute right-5 top-5 p-1.5 rounded-full bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition-colors cursor-pointer"
+          >
+            <X size={18} />
+          </button>
 
-        {/* Header */}
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-amber-500/15 border border-amber-500/25 flex items-center justify-center text-amber-400">
-            <Palmtree size={20} />
-          </div>
-          <div>
-            <h3 className="text-lg font-extrabold text-white tracking-tight">
-              Academic Circular &amp; Holiday Importer
-            </h3>
-            <p className="text-xs text-[#8E8E93]">
-              Upload university holiday notices or academic calendars to sync semester dates and off-days.
-            </p>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-amber-500/15 border border-amber-500/25 flex items-center justify-center text-amber-400 shrink-0">
+              <Palmtree size={20} />
+            </div>
+            <div>
+              <h3 className="text-lg font-extrabold text-white tracking-tight">
+                Academic Circular &amp; Holiday Importer
+              </h3>
+              <p className="text-xs text-[#8E8E93]">
+                Upload university holiday notices or academic calendars to sync semester dates and off-days.
+              </p>
+            </div>
           </div>
         </div>
 
-        {error && (
-          <div className="p-3.5 rounded-2xl bg-rose-500/15 border border-rose-500/25 text-rose-300 text-xs flex items-center gap-2">
-            <AlertCircle size={16} className="shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
+        {/* Scrollable Modal Content */}
+        <div className="flex-1 overflow-y-auto p-6 space-y-5 min-h-0">
+          {error && (
+            <div className="p-3.5 rounded-2xl bg-rose-500/15 border border-rose-500/25 text-rose-300 text-xs flex items-center gap-2">
+              <AlertCircle size={16} className="shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
 
         {/* Upload Drop Zone */}
         {items.length === 0 && !extracting && (
@@ -576,39 +671,42 @@ export default function HolidayParserModal({
                 );
               })}
             </div>
+          </div>
+        )}
+        </div>
 
-            {/* Bottom Actions */}
-            <div className="flex items-center justify-between gap-3 pt-3 border-t border-white/[0.08]">
-              <span className="text-xs text-[#8E8E93]">
-                <strong className="text-white">{selectedCount}</strong> holidays selected for import
-              </span>
+        {/* Sticky Bottom Actions */}
+        {(items.length > 0 || parsedDoc?.semesterStartDate) && (
+          <div className="shrink-0 p-4 px-6 border-t border-white/[0.08] bg-[#18181B]/95 backdrop-blur-md flex flex-col sm:flex-row items-center justify-between gap-3">
+            <span className="text-xs text-[#8E8E93]">
+              <strong className="text-white">{selectedCount}</strong> holidays selected for import
+            </span>
 
-              <div className="flex items-center gap-2.5">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/80 text-xs font-semibold cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={handleImport}
-                  disabled={isImporting || (selectedCount === 0 && !parsedDoc?.semesterStartDate)}
-                  className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-500/90 text-black text-xs font-bold transition-all shadow-lg shadow-amber-500/20 cursor-pointer disabled:opacity-50"
-                >
-                  <Sparkles size={14} />
-                  <span>
-                    {isImporting
-                      ? "Applying..."
-                      : selectedCount === 0 && parsedDoc?.semesterDateVariants && parsedDoc.semesterDateVariants[selectedVariantIndex]
-                      ? `Apply ${parsedDoc.semesterDateVariants[selectedVariantIndex].shortLabel} Settings`
-                      : selectedCount === 0 && parsedDoc?.semesterStartDate
-                      ? "Apply Semester Settings"
-                      : `Import ${selectedCount} Holidays & Sync Settings`}
-                  </span>
-                </button>
-              </div>
+            <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/80 text-xs font-semibold cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleImport}
+                disabled={isImporting || (selectedCount === 0 && !parsedDoc?.semesterStartDate)}
+                className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold transition-all shadow-lg shadow-amber-500/20 cursor-pointer disabled:opacity-50"
+              >
+                <Sparkles size={14} />
+                <span>
+                  {isImporting
+                    ? "Applying..."
+                    : selectedCount === 0 && parsedDoc?.semesterDateVariants && parsedDoc.semesterDateVariants[selectedVariantIndex]
+                    ? `Apply ${parsedDoc.semesterDateVariants[selectedVariantIndex].shortLabel} Settings`
+                    : selectedCount === 0 && parsedDoc?.semesterStartDate
+                    ? "Apply Semester Settings"
+                    : `Import ${selectedCount} Holidays & Sync Settings`}
+                </span>
+              </button>
             </div>
           </div>
         )}

@@ -17,6 +17,9 @@ import {
   ArrowLeftRight,
   Rows3,
   Table,
+  Edit2,
+  User,
+  MapPin,
 } from "lucide-react";
 import { AttendanceSubject, TimetableSlot } from "../../types/attendance";
 import { attendanceApi } from "../../lib/attendance-api";
@@ -198,6 +201,7 @@ export default function TimetableTab() {
   });
   const [applyFrom, setApplyFrom] = useState<string>(getTodayStr());
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string>("all");
+  const [isEditMode, setIsEditMode] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [showClearAllConfirm, setShowClearAllConfirm] = useState(false);
@@ -214,11 +218,16 @@ export default function TimetableTab() {
     const init = async () => {
       setIsLoading(true);
       try {
-        const [subjs, ttData] = await Promise.all([
+        const [subjs, ttData, settingsData] = await Promise.all([
           attendanceApi.getSubjects(),
           attendanceApi.getTimetable(),
+          attendanceApi.getSettings().catch(() => null),
         ]);
         setSubjects(subjs);
+
+        if (settingsData?.semester?.startDate) {
+          setApplyFrom(settingsData.semester.startDate);
+        }
 
         const loadedSlots: TimetableSlot[] = ttData.slots.map((s) => ({
           _id: s._id,
@@ -228,6 +237,8 @@ export default function TimetableTab() {
           endTime: s.endTime,
           room: s.room,
           slotType: s.slotType || "lecture",
+          blockId: (s as any).blockId || null,
+          blockSpan: (s as any).blockSpan || 1,
           subjectId:
             typeof s.subjectId === "object" && s.subjectId !== null
               ? (s.subjectId as any)._id
@@ -561,6 +572,8 @@ export default function TimetableTab() {
         room: s.room || "",
         slotType: s.slotType || "lecture",
         subjectId: s.subjectId || null,
+        blockId: (s as any).blockId || null,
+        blockSpan: Number((s as any).blockSpan) || 1,
       }));
 
       const [res] = await Promise.all([
@@ -679,7 +692,7 @@ export default function TimetableTab() {
                 </option>
                 {subjects.map((s) => (
                   <option key={s._id} value={s._id} className="bg-[#1C1C1E] text-white">
-                    {s.name}
+                    {s.shortName ? `[${s.shortName}] ${s.name}` : s.name}
                   </option>
                 ))}
               </select>
@@ -707,6 +720,21 @@ export default function TimetableTab() {
               <span>Scan Routine</span>
             </button>
 
+            {/* Edit Mode Toggle Button */}
+            <button
+              type="button"
+              onClick={() => setIsEditMode(!isEditMode)}
+              className={`flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex-1 sm:flex-initial ${
+                isEditMode
+                  ? "bg-amber-500 hover:bg-amber-400 text-black shadow-lg shadow-amber-500/25"
+                  : "bg-white/10 hover:bg-white/15 text-white border border-white/10"
+              }`}
+              title={isEditMode ? "Exit editing mode" : "Edit slots, rooms and duration"}
+            >
+              <Edit2 size={13} />
+              <span>{isEditMode ? "Done Editing" : "Edit Timetable"}</span>
+            </button>
+
             {/* Clear Routine Button */}
             {slots.length > 0 && (
               <button
@@ -731,36 +759,65 @@ export default function TimetableTab() {
           </div>
         </div>
 
+        {/* Edit Mode Active Banner */}
+        {isEditMode && (
+          <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/25 text-amber-300 text-xs flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Edit2 size={14} className="shrink-0 text-amber-400" />
+              <span>
+                <strong>Editing Mode Active:</strong> Assign subjects, switch between lecture/lab, customize room numbers, or change period duration (1h–4h). Click <strong>"Save Timetable"</strong> or <strong>"Done Editing"</strong> when finished.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsEditMode(false)}
+              className="px-3 py-1 rounded-lg bg-amber-500 text-black font-bold text-[11px] hover:bg-amber-400 transition-colors shrink-0 cursor-pointer"
+            >
+              Done Editing
+            </button>
+          </div>
+        )}
+
         {/* Quick Actions & Day Filter Bar */}
         <div className="pt-2 border-t border-white/[0.06] flex items-center justify-between gap-3 flex-wrap text-xs">
           <div className="flex items-center gap-2 flex-wrap">
             {/* Day Filter Pills */}
-            <div className="flex items-center bg-white/5 p-0.5 rounded-xl border border-white/5 overflow-x-auto max-w-full scrollbar-none shrink-0">
+            <div className="flex items-center bg-white/5 p-1 rounded-2xl border border-white/10 overflow-x-auto max-w-full scrollbar-none gap-1 shrink-0">
               <button
                 type="button"
                 onClick={() => setActiveDayFilter("all")}
-                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                   activeDayFilter === "all"
-                    ? "bg-[#0A84FF] text-white shadow-sm"
+                    ? "bg-[#0A84FF] text-white shadow-md shadow-[#0A84FF]/25"
                     : "text-white/60 hover:text-white"
                 }`}
               >
-                All Week
+                All Week ({slots.filter((s) => s.subjectId).length})
               </button>
-              {WEEKDAYS.slice(0, 6).map((wd) => (
-                <button
-                  key={wd.day}
-                  type="button"
-                  onClick={() => setActiveDayFilter(wd.day)}
-                  className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                    activeDayFilter === wd.day
-                      ? "bg-[#0A84FF] text-white shadow-sm"
-                      : "text-white/60 hover:text-white"
-                  }`}
-                >
-                  {wd.short}
-                </button>
-              ))}
+              {WEEKDAYS.map((wd) => {
+                const daySlotCount = slots.filter((s) => s.weekday === wd.day && s.subjectId).length;
+                return (
+                  <button
+                    key={wd.day}
+                    type="button"
+                    onClick={() => setActiveDayFilter(wd.day)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+                      activeDayFilter === wd.day
+                        ? "bg-[#0A84FF] text-white shadow-md shadow-[#0A84FF]/25"
+                        : "text-white/60 hover:text-white"
+                    }`}
+                  >
+                    <span>{wd.short}</span>
+                    {daySlotCount > 0 && (
+                      <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                        activeDayFilter === wd.day ? "bg-white/20 text-white" : "bg-white/10 text-white/50"
+                      }`}>
+                        {daySlotCount}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
 
             <div className="h-4 w-[1px] bg-white/10 mx-1 hidden sm:block" />
@@ -965,137 +1022,235 @@ export default function TimetableTab() {
                           )}
                         </div>
 
-                        {/* Subject Selection */}
-                        <div className="space-y-2">
-                          <div>
-                            <select
-                              value={block.subjectId ? String(block.subjectId) : ""}
-                              onChange={(e) =>
-                                updateBlock(wd.day, block, {
-                                  subjectId: e.target.value ? e.target.value : null,
-                                })
-                              }
-                              className="w-full text-sm font-bold rounded-xl bg-white/5 border border-white/10 py-2 px-3 text-white focus:outline-none focus:border-[#0A84FF] cursor-pointer"
-                              style={{
-                                color: selectedSubj ? selectedSubj.color : "#8E8E93",
-                              }}
-                            >
-                              <option value="" className="bg-[#1C1C1E] text-[#8E8E93]">
-                                {isMultiHour
-                                  ? isLab
-                                    ? `${block.span}-Hour Lab Practical`
-                                    : isTutorial
-                                    ? `${block.span}-Hour Tutorial`
-                                    : `${block.span}-Hour Combined Class`
-                                  : "Free Period (Tap to assign subject)"}
-                              </option>
-                              {subjects.map((subj) => (
-                                <option
-                                  key={subj._id}
-                                  value={subj._id}
-                                  className="bg-[#1C1C1E] text-white"
-                                >
-                                  {subj.name}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
+                        {!isEditMode ? (
+                          <div className="space-y-2 py-0.5">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="space-y-1 flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  {selectedSubj && (
+                                    <span
+                                      className="w-2.5 h-2.5 rounded-full shrink-0"
+                                      style={{ backgroundColor: selectedSubj.color }}
+                                    />
+                                  )}
+                                  <h4 className="font-extrabold text-white text-base tracking-tight truncate">
+                                    {selectedSubj
+                                      ? selectedSubj.name
+                                      : isMultiHour
+                                      ? `${block.span}-Hour Class`
+                                      : "Free Period"}
+                                  </h4>
+                                  {selectedSubj?.shortName && (
+                                    <span className="text-[11px] font-mono font-bold text-white bg-white/10 px-2 py-0.5 rounded-lg border border-white/15 shrink-0">
+                                      {selectedSubj.shortName}
+                                    </span>
+                                  )}
+                                  {selectedSubj?.code && (
+                                    <span className="text-[10px] font-mono text-[#8E8E93] bg-white/5 px-2 py-0.5 rounded-md border border-white/5 shrink-0">
+                                      {selectedSubj.code}
+                                    </span>
+                                  )}
+                                </div>
 
-                          {/* Type Toggle & Room in a 2-column grid */}
-                          <div className="grid grid-cols-2 gap-2">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const nextType =
-                                  block.slotType === "lecture"
-                                    ? "lab"
-                                    : block.slotType === "lab"
-                                    ? "tutorial"
-                                    : "lecture";
-                                updateBlock(wd.day, block, { slotType: nextType });
-                              }}
-                              className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-xl text-xs font-bold border transition-colors cursor-pointer truncate ${
-                                isLab
-                                  ? "bg-purple-500/25 border-purple-500/40 text-purple-200"
-                                  : isTutorial
-                                  ? "bg-cyan-500/25 border-cyan-500/40 text-cyan-200"
-                                  : "bg-white/5 border-white/10 text-white/70 hover:text-white"
-                              }`}
-                              title="Toggle Lecture / Lab / Tutorial"
-                            >
-                              {isLab ? (
-                                <>
-                                  <FlaskConical size={12} className="text-purple-300 shrink-0" />
-                                  <span>Lab</span>
-                                </>
-                              ) : isTutorial ? (
-                                <>
-                                  <GraduationCap size={12} className="text-cyan-300 shrink-0" />
-                                  <span>Tutorial</span>
-                                </>
-                              ) : (
-                                <>
-                                  <BookOpen size={12} className="text-blue-300 shrink-0" />
-                                  <span>Lecture</span>
-                                </>
-                              )}
-                            </button>
+                                <div className="flex items-center gap-3 text-xs text-[#8E8E93] flex-wrap pt-0.5">
+                                  {(block.room || selectedSubj?.defaultRoom) && (
+                                    <span className="flex items-center gap-1 text-white/80">
+                                      <MapPin size={12} className="text-[#0A84FF]" />
+                                      <span>Room: {block.room || selectedSubj?.defaultRoom}</span>
+                                    </span>
+                                  )}
+                                  {selectedSubj?.teacher && (
+                                    <span className="flex items-center gap-1 text-white/60">
+                                      <User size={12} />
+                                      <span>Faculty: {selectedSubj.teacher}</span>
+                                    </span>
+                                  )}
+                                  {!selectedSubj && (
+                                    <span className="text-white/40 italic">Free slot (Tap Edit Timetable to assign)</span>
+                                  )}
+                                </div>
+                              </div>
 
-                            <input
-                              type="text"
-                              placeholder={isLab ? "Lab (e.g. Lab 3)" : "Room (e.g. LH-1)"}
-                              value={block.room || ""}
-                              onChange={(e) =>
-                                updateBlock(wd.day, block, { room: e.target.value })
-                              }
-                              className="text-xs bg-white/5 border border-white/10 rounded-xl px-2.5 py-1.5 text-white/90 placeholder:text-white/30 focus:outline-none focus:border-[#0A84FF] truncate"
-                            />
-                          </div>
-                        </div>
-
-                        {/* Duration Selector */}
-                        <div className="pt-2.5 mt-2.5 border-t border-white/[0.06] flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] text-white/40 uppercase tracking-wider font-semibold">
-                              Duration
-                            </span>
-                            {isMultiHour && (
-                              <button
-                                type="button"
-                                onClick={() => setBlockSpan(wd.day, block, 1, "lecture")}
-                                className="text-[10px] text-rose-400/90 hover:text-rose-300 font-semibold transition-colors cursor-pointer"
-                                title="Split back to 1-hour slots"
-                              >
-                                Split 1h
-                              </button>
-                            )}
-                          </div>
-
-                          <div className="flex items-center gap-1.5">
-                            {([1, 2, 3, 4] as const).map((s) => {
-                              const isActive = block.span === s;
-                              return (
-                                <button
-                                  key={s}
-                                  type="button"
-                                  onClick={() => setBlockSpan(wd.day, block, s)}
-                                  className={`px-2.5 py-1 text-center rounded-lg text-xs font-bold border transition-all cursor-pointer ${
-                                    isActive
-                                      ? isLab
-                                        ? "bg-purple-600 text-white border-purple-500 shadow-sm shadow-purple-600/30"
-                                        : isTutorial
-                                        ? "bg-cyan-500 text-black border-cyan-400 font-extrabold"
-                                        : "bg-[#0A84FF] text-white border-[#0A84FF] shadow-sm shadow-[#0A84FF]/25"
-                                      : "bg-white/5 border-white/10 text-white/60 hover:text-white hover:bg-white/10"
+                              <div className="flex items-center gap-2 shrink-0">
+                                <span
+                                  className={`inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full border ${
+                                    isLab
+                                      ? "bg-purple-500/15 border-purple-500/30 text-purple-300"
+                                      : isTutorial
+                                      ? "bg-cyan-500/15 border-cyan-500/30 text-cyan-300"
+                                      : "bg-blue-500/15 border-blue-500/30 text-blue-300"
                                   }`}
-                                  title={`Set duration to ${s} period${s > 1 ? "s" : ""} (${s} hour${s > 1 ? "s" : ""})`}
                                 >
-                                  {s}h
+                                  {isLab ? <FlaskConical size={12} /> : isTutorial ? <GraduationCap size={12} /> : <BookOpen size={12} />}
+                                  <span>{isLab ? "Lab Practical" : isTutorial ? "Tutorial" : "Lecture"}</span>
+                                </span>
+
+                                <button
+                                  type="button"
+                                  onClick={() => setIsEditMode(true)}
+                                  className="p-1 rounded-lg text-white/40 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                                  title="Edit schedule"
+                                >
+                                  <Edit2 size={13} />
                                 </button>
-                              );
-                            })}
+                              </div>
+                            </div>
                           </div>
-                        </div>
+                        ) : (
+                          <>
+                            {/* Subject Selection */}
+                            <div className="space-y-2">
+                              <div>
+                                <select
+                                  value={block.subjectId ? String(block.subjectId) : ""}
+                                  onChange={(e) =>
+                                    updateBlock(wd.day, block, {
+                                      subjectId: e.target.value ? e.target.value : null,
+                                    })
+                                  }
+                                  className="w-full text-sm font-bold rounded-xl bg-white/5 border border-white/10 py-2 px-3 text-white focus:outline-none focus:border-[#0A84FF] cursor-pointer"
+                                  style={{
+                                    color: selectedSubj ? selectedSubj.color : "#8E8E93",
+                                  }}
+                                >
+                                  <option value="" className="bg-[#1C1C1E] text-[#8E8E93]">
+                                    {isMultiHour
+                                      ? isLab
+                                        ? `${block.span}-Hour Lab Practical`
+                                        : isTutorial
+                                        ? `${block.span}-Hour Tutorial`
+                                        : `${block.span}-Hour Combined Class`
+                                      : "Free Period (Tap to assign subject)"}
+                                  </option>
+                                  {subjects.map((subj) => (
+                                    <option
+                                      key={subj._id}
+                                      value={subj._id}
+                                      className="bg-[#1C1C1E] text-white"
+                                    >
+                                      {subj.shortName ? `[${subj.shortName}] ${subj.name}` : subj.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              {selectedSubj && (
+                                <div className="flex items-center gap-1.5 flex-wrap text-[11px] text-white/60 px-0.5">
+                                  {selectedSubj.shortName && (
+                                    <span className="px-1.5 py-0.5 rounded bg-white/10 text-white font-mono font-bold text-[10px]">
+                                      {selectedSubj.shortName}
+                                    </span>
+                                  )}
+                                  {selectedSubj.code && (
+                                    <span className="text-white/40 font-mono text-[10px]">
+                                      {selectedSubj.code}
+                                    </span>
+                                  )}
+                                  {selectedSubj.teacher && (
+                                    <span className="truncate max-w-[160px] text-white/50 text-[11px]">
+                                      • {selectedSubj.teacher}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Type Toggle & Room in a 2-column grid */}
+                              <div className="grid grid-cols-2 gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const nextType =
+                                      block.slotType === "lecture"
+                                        ? "lab"
+                                        : block.slotType === "lab"
+                                        ? "tutorial"
+                                        : "lecture";
+                                    updateBlock(wd.day, block, { slotType: nextType });
+                                  }}
+                                  className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-xl text-xs font-bold border transition-colors cursor-pointer truncate ${
+                                    isLab
+                                      ? "bg-purple-500/25 border-purple-500/40 text-purple-200"
+                                      : isTutorial
+                                      ? "bg-cyan-500/25 border-cyan-500/40 text-cyan-200"
+                                      : "bg-white/5 border-white/10 text-white/70 hover:text-white"
+                                  }`}
+                                  title="Toggle Lecture / Lab / Tutorial"
+                                >
+                                  {isLab ? (
+                                    <>
+                                      <FlaskConical size={12} className="text-purple-300 shrink-0" />
+                                      <span>Lab</span>
+                                    </>
+                                  ) : isTutorial ? (
+                                    <>
+                                      <GraduationCap size={12} className="text-cyan-300 shrink-0" />
+                                      <span>Tutorial</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <BookOpen size={12} className="text-blue-300 shrink-0" />
+                                      <span>Lecture</span>
+                                    </>
+                                  )}
+                                </button>
+
+                                <input
+                                  type="text"
+                                  placeholder={isLab ? "Lab (e.g. Lab 3)" : "Room (e.g. LH-1)"}
+                                  value={block.room || ""}
+                                  onChange={(e) =>
+                                    updateBlock(wd.day, block, { room: e.target.value })
+                                  }
+                                  className="text-xs bg-white/5 border border-white/10 rounded-xl px-2.5 py-1.5 text-white/90 placeholder:text-white/30 focus:outline-none focus:border-[#0A84FF] truncate"
+                                />
+                              </div>
+                            </div>
+
+                            {/* Duration Selector */}
+                            <div className="pt-2.5 mt-2.5 border-t border-white/[0.06] flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] text-white/40 uppercase tracking-wider font-semibold">
+                                  Duration
+                                </span>
+                                {isMultiHour && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setBlockSpan(wd.day, block, 1, "lecture")}
+                                    className="text-[10px] text-rose-400/90 hover:text-rose-300 font-semibold transition-colors cursor-pointer"
+                                    title="Split back to 1-hour slots"
+                                  >
+                                    Split 1h
+                                  </button>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-1.5">
+                                {([1, 2, 3, 4] as const).map((s) => {
+                                  const isActive = block.span === s;
+                                  return (
+                                    <button
+                                      key={s}
+                                      type="button"
+                                      onClick={() => setBlockSpan(wd.day, block, s)}
+                                      className={`px-2.5 py-1 text-center rounded-lg text-xs font-bold border transition-all cursor-pointer ${
+                                        isActive
+                                          ? isLab
+                                            ? "bg-purple-600 text-white border-purple-500 shadow-sm shadow-purple-600/30"
+                                            : isTutorial
+                                            ? "bg-cyan-500 text-black border-cyan-400 font-extrabold"
+                                            : "bg-[#0A84FF] text-white border-[#0A84FF] shadow-sm shadow-[#0A84FF]/25"
+                                          : "bg-white/5 border-white/10 text-white/60 hover:text-white hover:bg-white/10"
+                                      }`}
+                                      title={`Set duration to ${s} period${s > 1 ? "s" : ""} (${s} hour${s > 1 ? "s" : ""})`}
+                                    >
+                                      {s}h
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </>
+                        )}
                       </div>
                     );
                   })}
@@ -1282,140 +1437,216 @@ export default function TimetableTab() {
                             </div>
                           </div>
 
-                          {/* Middle: Subject & Room */}
-                          <div className="space-y-1.5 flex-1 min-w-0">
-                            <div>
-                              <select
-                                value={block.subjectId ? String(block.subjectId) : ""}
-                                onChange={(e) =>
-                                  updateBlock(wd.day, block, {
-                                    subjectId: e.target.value ? e.target.value : null,
-                                  })
-                                }
-                                className="w-full text-xs font-bold rounded-xl bg-white/5 border border-white/10 py-1.5 px-2 text-white focus:outline-none focus:border-[#0A84FF] cursor-pointer truncate"
-                                style={{
-                                  color: selectedSubj ? selectedSubj.color : "#8E8E93",
-                                }}
-                              >
-                                <option value="" className="bg-[#1C1C1E] text-[#8E8E93]">
-                                  {isMultiHour
-                                    ? isLab
-                                      ? `${block.span}-Hour Lab Practical`
+                          {!isEditMode ? (
+                            <div className="space-y-1.5 flex-1 min-w-0 flex flex-col justify-between py-0.5">
+                              <div>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  {selectedSubj && (
+                                    <span
+                                      className="w-2 h-2 rounded-full shrink-0"
+                                      style={{ backgroundColor: selectedSubj.color }}
+                                    />
+                                  )}
+                                  <h4 className="font-extrabold text-white text-xs tracking-tight truncate">
+                                    {selectedSubj
+                                      ? (selectedSubj.shortName ? `[${selectedSubj.shortName}] ${selectedSubj.name}` : selectedSubj.name)
+                                      : isMultiHour
+                                      ? `${block.span}-Hour Period`
+                                      : "Free"}
+                                  </h4>
+                                </div>
+
+                                <div className="space-y-0.5 pt-1 text-[10px] text-[#8E8E93]">
+                                  {(block.room || selectedSubj?.defaultRoom) && (
+                                    <p className="flex items-center gap-1 text-white/80 truncate">
+                                      <MapPin size={10} className="text-[#0A84FF] shrink-0" />
+                                      <span className="truncate">{block.room || selectedSubj?.defaultRoom}</span>
+                                    </p>
+                                  )}
+                                  {selectedSubj?.teacher && (
+                                    <p className="flex items-center gap-1 text-white/50 truncate">
+                                      <User size={10} className="shrink-0" />
+                                      <span className="truncate">{selectedSubj.teacher}</span>
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="pt-1 flex items-center justify-between gap-1 border-t border-white/[0.04]">
+                                <span
+                                  className={`text-[9px] font-bold px-1.5 py-0.5 rounded border truncate ${
+                                    isLab
+                                      ? "bg-purple-500/15 border-purple-500/30 text-purple-300"
                                       : isTutorial
-                                      ? `${block.span}-Hour Tutorial`
-                                      : `${block.span}-Hour Combined Class`
-                                    : "Free Slot"}
-                                </option>
-                                {subjects.map((subj) => (
-                                  <option
-                                    key={subj._id}
-                                    value={subj._id}
-                                    className="bg-[#1C1C1E] text-white"
-                                  >
-                                    {subj.name}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-
-                            {/* Slot Type Toggle */}
-                            <div className="flex items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const nextType =
-                                    block.slotType === "lecture"
-                                      ? "lab"
-                                      : block.slotType === "lab"
-                                      ? "tutorial"
-                                      : "lecture";
-                                  updateBlock(wd.day, block, { slotType: nextType });
-                                }}
-                                className={`w-full flex items-center justify-center gap-1 py-1 px-1.5 rounded-lg text-[10px] font-bold border transition-colors cursor-pointer truncate ${
-                                  isLab
-                                    ? "bg-purple-500/25 border-purple-500/40 text-purple-200"
-                                    : isTutorial
-                                    ? "bg-cyan-500/25 border-cyan-500/40 text-cyan-200"
-                                    : "bg-white/5 border-white/10 text-white/70 hover:text-white"
-                                }`}
-                                title="Toggle Lecture / Lab / Tutorial"
-                              >
-                                {isLab ? (
-                                  <>
-                                    <FlaskConical size={11} className="text-purple-300 shrink-0" />
-                                    <span>Lab</span>
-                                  </>
-                                ) : isTutorial ? (
-                                  <>
-                                    <GraduationCap size={11} className="text-cyan-300 shrink-0" />
-                                    <span>Tutorial</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <BookOpen size={11} className="text-blue-300 shrink-0" />
-                                    <span>Lecture</span>
-                                  </>
-                                )}
-                              </button>
-                            </div>
-
-                            {/* Room Input */}
-                            <div>
-                              <input
-                                type="text"
-                                placeholder={isLab ? "Lab (e.g. Lab 3)" : "Room (e.g. LH-1)"}
-                                value={block.room || ""}
-                                onChange={(e) =>
-                                  updateBlock(wd.day, block, { room: e.target.value })
-                                }
-                                className="w-full text-[11px] bg-transparent border-b border-white/10 py-0.5 text-white/70 placeholder:text-white/20 focus:outline-none focus:border-[#0A84FF] truncate"
-                              />
-                            </div>
-                          </div>
-
-                          {/* Bottom Row: Duration Adjuster Grid & Reset Action */}
-                          <div className="pt-2 mt-2 border-t border-white/[0.06] space-y-1">
-                            <div className="flex items-center justify-between text-[9px] text-white/40">
-                              <span className="font-semibold uppercase tracking-wider text-[8px]">Duration</span>
-                              {isMultiHour ? (
+                                      ? "bg-cyan-500/15 border-cyan-500/30 text-cyan-300"
+                                      : "bg-blue-500/15 border-blue-500/30 text-blue-300"
+                                  }`}
+                                >
+                                  {isLab ? "Lab" : isTutorial ? "Tutorial" : "Lecture"}
+                                </span>
                                 <button
                                   type="button"
-                                  onClick={() => setBlockSpan(wd.day, block, 1, "lecture")}
-                                  className="text-[9px] text-rose-400/90 hover:text-rose-300 font-semibold transition-colors cursor-pointer"
-                                  title="Split back to 1-hour slots"
+                                  onClick={() => setIsEditMode(true)}
+                                  className="text-white/30 hover:text-white p-0.5 transition-colors cursor-pointer"
+                                  title="Edit slot"
                                 >
-                                  Split 1h
+                                  <Edit2 size={10} />
                                 </button>
-                              ) : (
-                                <span className="text-[8px] text-white/30 font-mono">1 period</span>
-                              )}
+                              </div>
                             </div>
-
-                            <div className="grid grid-cols-4 gap-1 w-full">
-                              {([1, 2, 3, 4] as const).map((s) => {
-                                const isActive = block.span === s;
-                                return (
-                                  <button
-                                    key={s}
-                                    type="button"
-                                    onClick={() => setBlockSpan(wd.day, block, s)}
-                                    className={`w-full py-1 text-center rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
-                                      isActive
-                                        ? isLab
-                                          ? "bg-purple-600 text-white border-purple-500 shadow-sm shadow-purple-600/30"
-                                          : isTutorial
-                                          ? "bg-cyan-500 text-black border-cyan-400 font-extrabold"
-                                          : "bg-[#0A84FF] text-white border-[#0A84FF] shadow-sm shadow-[#0A84FF]/25"
-                                        : "bg-white/5 border-white/10 text-white/60 hover:text-white hover:bg-white/10"
-                                    }`}
-                                    title={`Set duration to ${s} period${s > 1 ? "s" : ""} (${s} hour${s > 1 ? "s" : ""})`}
+                          ) : (
+                            <>
+                              {/* Middle: Subject & Room */}
+                              <div className="space-y-1.5 flex-1 min-w-0">
+                                <div>
+                                  <select
+                                    value={block.subjectId ? String(block.subjectId) : ""}
+                                    onChange={(e) =>
+                                      updateBlock(wd.day, block, {
+                                        subjectId: e.target.value ? e.target.value : null,
+                                      })
+                                    }
+                                    className="w-full text-xs font-bold rounded-xl bg-white/5 border border-white/10 py-1.5 px-2 text-white focus:outline-none focus:border-[#0A84FF] cursor-pointer truncate"
+                                    style={{
+                                      color: selectedSubj ? selectedSubj.color : "#8E8E93",
+                                    }}
                                   >
-                                    {s}h
+                                    <option value="" className="bg-[#1C1C1E] text-[#8E8E93]">
+                                      {isMultiHour
+                                        ? isLab
+                                          ? `${block.span}-Hour Lab Practical`
+                                          : isTutorial
+                                          ? `${block.span}-Hour Tutorial`
+                                          : `${block.span}-Hour Combined Class`
+                                        : "Free Slot"}
+                                    </option>
+                                    {subjects.map((subj) => (
+                                      <option
+                                        key={subj._id}
+                                        value={subj._id}
+                                        className="bg-[#1C1C1E] text-white"
+                                      >
+                                        {subj.shortName ? `[${subj.shortName}] ${subj.name}` : subj.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+
+                                {selectedSubj && (
+                                  <div className="flex items-center gap-1 text-[10px] text-white/50 truncate px-0.5">
+                                    {selectedSubj.shortName && (
+                                      <span className="px-1 py-0.2 rounded bg-white/10 text-white font-mono font-bold text-[9px] shrink-0">
+                                        {selectedSubj.shortName}
+                                      </span>
+                                    )}
+                                    {selectedSubj.teacher && (
+                                      <span className="truncate text-white/40">
+                                        {selectedSubj.teacher}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+
+                                {/* Slot Type Toggle */}
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const nextType =
+                                        block.slotType === "lecture"
+                                          ? "lab"
+                                          : block.slotType === "lab"
+                                          ? "tutorial"
+                                          : "lecture";
+                                      updateBlock(wd.day, block, { slotType: nextType });
+                                    }}
+                                    className={`w-full flex items-center justify-center gap-1 py-1 px-1.5 rounded-lg text-[10px] font-bold border transition-colors cursor-pointer truncate ${
+                                      isLab
+                                        ? "bg-purple-500/25 border-purple-500/40 text-purple-200"
+                                        : isTutorial
+                                        ? "bg-cyan-500/25 border-cyan-500/40 text-cyan-200"
+                                        : "bg-white/5 border-white/10 text-white/70 hover:text-white"
+                                    }`}
+                                    title="Toggle Lecture / Lab / Tutorial"
+                                  >
+                                    {isLab ? (
+                                      <>
+                                        <FlaskConical size={11} className="text-purple-300 shrink-0" />
+                                        <span>Lab</span>
+                                      </>
+                                    ) : isTutorial ? (
+                                      <>
+                                        <GraduationCap size={11} className="text-cyan-300 shrink-0" />
+                                        <span>Tutorial</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <BookOpen size={11} className="text-blue-300 shrink-0" />
+                                        <span>Lecture</span>
+                                      </>
+                                    )}
                                   </button>
-                                );
-                              })}
-                            </div>
-                          </div>
+                                </div>
+
+                                {/* Room Input */}
+                                <div>
+                                  <input
+                                    type="text"
+                                    placeholder={isLab ? "Lab (e.g. Lab 3)" : "Room (e.g. LH-1)"}
+                                    value={block.room || ""}
+                                    onChange={(e) =>
+                                      updateBlock(wd.day, block, { room: e.target.value })
+                                    }
+                                    className="w-full text-[11px] bg-transparent border-b border-white/10 py-0.5 text-white/70 placeholder:text-white/20 focus:outline-none focus:border-[#0A84FF] truncate"
+                                  />
+                                </div>
+                              </div>
+
+                              {/* Bottom Row: Duration Adjuster Grid & Reset Action */}
+                              <div className="pt-2 mt-2 border-t border-white/[0.06] space-y-1">
+                                <div className="flex items-center justify-between text-[9px] text-white/40">
+                                  <span className="font-semibold uppercase tracking-wider text-[8px]">Duration</span>
+                                  {isMultiHour ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => setBlockSpan(wd.day, block, 1, "lecture")}
+                                      className="text-[9px] text-rose-400/90 hover:text-rose-300 font-semibold transition-colors cursor-pointer"
+                                      title="Split back to 1-hour slots"
+                                    >
+                                      Split 1h
+                                    </button>
+                                  ) : (
+                                    <span className="text-[8px] text-white/30 font-mono">1 period</span>
+                                  )}
+                                </div>
+
+                                <div className="grid grid-cols-4 gap-1 w-full">
+                                  {([1, 2, 3, 4] as const).map((s) => {
+                                    const isActive = block.span === s;
+                                    return (
+                                      <button
+                                        key={s}
+                                        type="button"
+                                        onClick={() => setBlockSpan(wd.day, block, s)}
+                                        className={`w-full py-1 text-center rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
+                                          isActive
+                                            ? isLab
+                                              ? "bg-purple-600 text-white border-purple-500 shadow-sm shadow-purple-600/30"
+                                              : isTutorial
+                                              ? "bg-cyan-500 text-black border-cyan-400 font-extrabold"
+                                              : "bg-[#0A84FF] text-white border-[#0A84FF] shadow-sm shadow-[#0A84FF]/25"
+                                            : "bg-white/5 border-white/10 text-white/60 hover:text-white hover:bg-white/10"
+                                        }`}
+                                        title={`Set duration to ${s} period${s > 1 ? "s" : ""} (${s} hour${s > 1 ? "s" : ""})`}
+                                      >
+                                        {s}h
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            </>
+                          )}
                         </div>
                       );
                     })}

@@ -24,7 +24,9 @@ export interface AttendanceSubject {
   _id: string;
   name: string;
   code?: string;
+  shortName?: string;
   teacher?: string;
+  defaultRoom?: string;
   color: string;
   minPercent: number;
   openingAttended: number;

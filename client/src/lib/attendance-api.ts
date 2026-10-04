@@ -26,7 +26,9 @@ export const attendanceApi = {
   createSubject: async (payload: {
     name: string;
     code?: string;
+    shortName?: string;
     teacher?: string;
+    defaultRoom?: string;
     color?: string;
     minPercent?: number;
     openingAttended?: number;
@@ -44,7 +46,9 @@ export const attendanceApi = {
     payload: Partial<{
       name: string;
       code: string;
+      shortName: string;
       teacher: string;
+      defaultRoom: string;
       color: string;
       minPercent: number;
       openingAttended: number;
@@ -94,6 +98,29 @@ export const attendanceApi = {
     return res.data.data;
   },
 
+  parseAiTimetable: async (imageBase64: string, mimeType: string) => {
+    const res = await api.post<{
+      success: boolean;
+      modelUsed?: string;
+      error?: string;
+      fallback?: boolean;
+      timings?: Array<{ slot: number; start: string; end: string }>;
+      schedule?: Array<{
+        day: string;
+        classes: Array<{
+          slots: number[];
+          subject: string;
+          code?: string;
+          shortName?: string;
+          type?: "lecture" | "lab" | "tutorial";
+          room?: string;
+          teacher?: string;
+        }>;
+      }>;
+    }>("/attendance/timetable/parse-ai", { imageBase64, mimeType });
+    return res.data;
+  },
+
   // Day & Marking
   getDaySessions: async (date: string) => {
     const res = await api.get<{ data: DaySessionsResponse }>(`/attendance/day/${date}`);
@@ -124,6 +151,13 @@ export const attendanceApi = {
       { label }
     );
     return res.data.data.holiday;
+  },
+
+  clearDayMarks: async (date: string) => {
+    const res = await api.delete<{ data: { deletedCount: number } }>(
+      `/attendance/day/${date}/marks`
+    );
+    return res.data.data;
   },
 
   addExtraSession: async (payload: {
@@ -350,6 +384,31 @@ export const attendanceApi = {
       "/attendance/holidays"
     );
     return res.data.data;
+  },
+
+  parseAiHolidayCalendar: async (imageBase64: string, mimeType: string) => {
+    const res = await api.post<{
+      success: boolean;
+      modelUsed?: string;
+      error?: string;
+      fallback?: boolean;
+      semesterStartDate?: string | null;
+      semesterEndDate?: string | null;
+      semesterName?: string | null;
+      holidays: Array<{
+        date: string;
+        label: string;
+        category?: "gazetted" | "restricted" | "weekend" | "special_day";
+        isOffDay?: boolean;
+      }>;
+      semesterDateVariants?: Array<{
+        label: string;
+        shortLabel: string;
+        startDate: string;
+        endDate?: string;
+      }>;
+    }>("/attendance/holidays/parse-ai", { imageBase64, mimeType });
+    return res.data;
   },
 
   autoPopulateHolidays: async (year?: number) => {

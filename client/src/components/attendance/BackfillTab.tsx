@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   History,
   Calendar,
@@ -9,6 +9,7 @@ import {
   AlertTriangle,
   ArrowRight,
   UploadCloud,
+  CheckCheck,
 } from "lucide-react";
 import { PendingDay, AttendanceStatus } from "../../types/attendance";
 import { attendanceApi } from "../../lib/attendance-api";
@@ -45,6 +46,7 @@ export default function BackfillTab({
   // Auto-fill Wizard State
   const [startDate, setStartDate] = useState(getThreeWeeksAgoStr());
   const [endDate, setEndDate] = useState(getYesterdayStr());
+  const [semesterStartDate, setSemesterStartDate] = useState<string | null>(null);
   const [defaultStatus, setDefaultStatus] = useState<AttendanceStatus>("present");
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [isCommitting, setIsCommitting] = useState(false);
@@ -103,6 +105,20 @@ export default function BackfillTab({
 
   useEffect(() => {
     loadPending();
+    const loadSemester = async () => {
+      try {
+        const settings = await attendanceApi.getSettings();
+        if (settings?.semester?.startDate) {
+          setSemesterStartDate(settings.semester.startDate);
+          if (settings.semester.startDate <= getYesterdayStr()) {
+            setStartDate(settings.semester.startDate);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load semester settings", err);
+      }
+    };
+    loadSemester();
   }, []);
 
   // Step 1: Preview Auto-Fill
@@ -124,13 +140,70 @@ export default function BackfillTab({
     }
   };
 
-  // Step 2: Toggle exception status in preview
+  // Step 2: Toggle exception status for an individual session in preview
   const handleToggleSessionStatus = (index: number, newStatus: AttendanceStatus) => {
     if (!previewData) return;
     const updated = [...previewData.sessions];
     updated[index] = { ...updated[index], status: newStatus };
     setPreviewData({ ...previewData, sessions: updated });
   };
+
+  // Set all sessions on a given date to a specific status
+  const handleSetDayStatus = (targetDate: string, newStatus: AttendanceStatus) => {
+    if (!previewData) return;
+    const updated = previewData.sessions.map((s) =>
+      s.date === targetDate ? { ...s, status: newStatus } : s
+    );
+    setPreviewData({ ...previewData, sessions: updated });
+    showToast(`Marked all classes on ${targetDate} as ${newStatus}`);
+  };
+
+  // Set every session in the entire preview to a specific status
+  const handleSetAllSessionsStatus = (newStatus: AttendanceStatus) => {
+    if (!previewData) return;
+    const updated = previewData.sessions.map((s) => ({ ...s, status: newStatus }));
+    setPreviewData({ ...previewData, sessions: updated });
+    showToast(`Marked all ${previewData.sessions.length} sessions as ${newStatus}`);
+  };
+
+  // Group previewData.sessions by date maintaining originalIndex for toggle mutations
+  const dateGroups = useMemo(() => {
+    if (!previewData) return [];
+    const map = new Map<
+      string,
+      Array<{ session: typeof previewData.sessions[0]; originalIndex: number }>
+    >();
+    previewData.sessions.forEach((session, idx) => {
+      if (!map.has(session.date)) {
+        map.set(session.date, []);
+      }
+      map.get(session.date)!.push({ session, originalIndex: idx });
+    });
+
+    return Array.from(map.entries()).map(([date, items]) => {
+      const d = new Date(
+        Number(date.split("-")[0]),
+        Number(date.split("-")[1]) - 1,
+        Number(date.split("-")[2])
+      );
+      const dayName = d.toLocaleDateString("en-US", {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+      });
+      const allPresent = items.every((it) => it.session.status === "present");
+      const allAbsent = items.every((it) => it.session.status === "absent");
+      const allCancelled = items.every((it) => it.session.status === "cancelled");
+      return {
+        date,
+        dayName,
+        items,
+        allPresent,
+        allAbsent,
+        allCancelled,
+      };
+    });
+  }, [previewData]);
 
   // Step 3: Commit Backfill
   const handleCommitBackfill = async () => {
@@ -290,9 +363,21 @@ export default function BackfillTab({
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
               <div>
-                <label className="block text-xs font-semibold text-white/80 mb-1.5 flex items-center gap-1.5">
-                  <Calendar size={13} /> Start Date
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-semibold text-white/80 flex items-center gap-1.5">
+                    <Calendar size={13} /> Start Date
+                  </label>
+                  {semesterStartDate && (
+                    <button
+                      type="button"
+                      onClick={() => setStartDate(semesterStartDate)}
+                      className="text-[10px] text-[#0A84FF] hover:underline cursor-pointer"
+                      title="Use semester start date"
+                    >
+                      From Sem Start ({semesterStartDate})
+                    </button>
+                  )}
+                </div>
                 <input
                   type="date"
                   value={startDate}
@@ -377,68 +462,158 @@ export default function BackfillTab({
                     Review Generated Sessions ({previewData.totalSessions})
                   </h4>
                   <p className="text-xs text-[#8E8E93]">
-                    Click any session below to change it to Absent or Cancelled before saving.
+                    Grouped by day. Use the quick day buttons to mark an entire day absent/present, or toggle individual lectures for exceptions.
                   </p>
                 </div>
                 <button
                   onClick={handleCommitBackfill}
                   disabled={isCommitting}
-                  className="px-5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-500/90 text-white text-xs font-bold transition-all shadow-lg shadow-emerald-500/25 disabled:opacity-50 cursor-pointer"
+                  className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold transition-all shadow-lg shadow-emerald-500/25 disabled:opacity-50 cursor-pointer shrink-0"
                 >
                   {isCommitting ? "Recording..." : `Commit All ${previewData.totalSessions} Sessions`}
                 </button>
               </div>
 
-              <div className="max-h-[420px] overflow-y-auto space-y-2 pr-1">
-                {previewData.sessions.map((session, idx) => (
-                  <div
-                    key={idx}
-                    className="p-3 rounded-2xl bg-white/[0.03] hover:bg-white/[0.05] border border-white/5 flex items-center justify-between gap-3 text-xs"
+              {/* Global Quick Action Strip */}
+              <div className="flex items-center justify-between gap-2 p-2.5 rounded-2xl bg-white/[0.02] border border-white/5 flex-wrap">
+                <span className="text-xs text-[#8E8E93] font-medium">Quick Mark Entire Date Range:</span>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => handleSetAllSessionsStatus("present")}
+                    className="flex items-center gap-1 px-3 py-1 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 text-xs font-semibold cursor-pointer transition-colors"
                   >
-                    <div className="flex items-center gap-3">
-                      <span
-                        className="w-2.5 h-2.5 rounded-full shrink-0"
-                        style={{ backgroundColor: session.color }}
-                      />
-                      <div>
-                        <p className="font-bold text-white">{session.subjectName}</p>
-                        <p className="text-[11px] font-mono text-[#8E8E93]">
-                          {session.date} • {session.startTime}–{session.endTime}
-                        </p>
+                    <CheckCheck size={13} />
+                    <span>All Present</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSetAllSessionsStatus("absent")}
+                    className="flex items-center gap-1 px-3 py-1 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-400 text-xs font-semibold cursor-pointer transition-colors"
+                  >
+                    <span>All Absent</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSetAllSessionsStatus("cancelled")}
+                    className="flex items-center gap-1 px-3 py-1 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-400 text-xs font-semibold cursor-pointer transition-colors"
+                  >
+                    <span>All Cancelled</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Day-Grouped Sessions List */}
+              <div className="max-h-[500px] overflow-y-auto space-y-3 pr-1">
+                {dateGroups.map((group) => (
+                  <div
+                    key={group.date}
+                    className="p-4 rounded-2xl bg-white/[0.03] border border-white/5 space-y-2.5"
+                  >
+                    {/* Day Header with quick bulk toggles */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/5 pb-2">
+                      <div className="flex items-center gap-2">
+                        <Calendar size={14} className="text-[#0A84FF]" />
+                        <span className="font-bold text-white text-xs sm:text-sm">{group.dayName}</span>
+                        <span className="text-[10px] text-[#8E8E93] font-mono">({group.date})</span>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 text-[#8E8E93]">
+                          {group.items.length} class{group.items.length !== 1 ? "es" : ""}
+                        </span>
+                      </div>
+
+                      {/* Day Bulk Action Buttons */}
+                      <div className="flex items-center gap-1.5 self-end sm:self-auto">
+                        <span className="text-[10px] text-white/50 mr-1 hidden sm:inline">Set Day:</span>
+                        <button
+                          type="button"
+                          onClick={() => handleSetDayStatus(group.date, "present")}
+                          className={`px-2.5 py-1 rounded-lg text-[10px] font-bold cursor-pointer transition-colors ${
+                            group.allPresent
+                              ? "bg-emerald-500 text-white shadow-sm"
+                              : "bg-white/5 text-emerald-400 hover:bg-emerald-500/20"
+                          }`}
+                        >
+                          All Present
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSetDayStatus(group.date, "absent")}
+                          className={`px-2.5 py-1 rounded-lg text-[10px] font-bold cursor-pointer transition-colors ${
+                            group.allAbsent
+                              ? "bg-rose-500 text-white shadow-sm"
+                              : "bg-white/5 text-rose-400 hover:bg-rose-500/20"
+                          }`}
+                        >
+                          All Absent
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSetDayStatus(group.date, "cancelled")}
+                          className={`px-2.5 py-1 rounded-lg text-[10px] font-bold cursor-pointer transition-colors ${
+                            group.allCancelled
+                              ? "bg-amber-500 text-white shadow-sm"
+                              : "bg-white/5 text-amber-400 hover:bg-amber-500/20"
+                          }`}
+                        >
+                          All Off/Cancelled
+                        </button>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={() => handleToggleSessionStatus(idx, "present")}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
-                          session.status === "present"
-                            ? "bg-emerald-500 text-white"
-                            : "bg-white/5 text-white/50 hover:text-white"
-                        }`}
-                      >
-                        Present
-                      </button>
-                      <button
-                        onClick={() => handleToggleSessionStatus(idx, "absent")}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
-                          session.status === "absent"
-                            ? "bg-rose-500 text-white"
-                            : "bg-white/5 text-white/50 hover:text-white"
-                        }`}
-                      >
-                        Absent
-                      </button>
-                      <button
-                        onClick={() => handleToggleSessionStatus(idx, "cancelled")}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
-                          session.status === "cancelled"
-                            ? "bg-amber-500 text-white"
-                            : "bg-white/5 text-white/50 hover:text-white"
-                        }`}
-                      >
-                        Cancelled
-                      </button>
+                    {/* Individual Session Rows within the Day */}
+                    <div className="space-y-1.5">
+                      {group.items.map(({ session, originalIndex }) => (
+                        <div
+                          key={originalIndex}
+                          className="p-2.5 rounded-xl bg-black/20 hover:bg-white/[0.04] border border-white/5 flex items-center justify-between gap-3 text-xs"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <span
+                              className="w-2.5 h-2.5 rounded-full shrink-0"
+                              style={{ backgroundColor: session.color }}
+                            />
+                            <div className="min-w-0">
+                              <p className="font-bold text-white truncate text-xs">{session.subjectName}</p>
+                              <p className="text-[10px] font-mono text-[#8E8E93]">
+                                {session.startTime}–{session.endTime}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              onClick={() => handleToggleSessionStatus(originalIndex, "present")}
+                              className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold transition-all cursor-pointer ${
+                                session.status === "present"
+                                  ? "bg-emerald-500 text-white shadow-sm"
+                                  : "bg-white/5 text-white/50 hover:text-white"
+                              }`}
+                            >
+                              Present
+                            </button>
+                            <button
+                              onClick={() => handleToggleSessionStatus(originalIndex, "absent")}
+                              className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold transition-all cursor-pointer ${
+                                session.status === "absent"
+                                  ? "bg-rose-500 text-white shadow-sm"
+                                  : "bg-white/5 text-white/50 hover:text-white"
+                              }`}
+                            >
+                              Absent
+                            </button>
+                            <button
+                              onClick={() => handleToggleSessionStatus(originalIndex, "cancelled")}
+                              className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold transition-all cursor-pointer ${
+                                session.status === "cancelled"
+                                  ? "bg-amber-500 text-white shadow-sm"
+                                  : "bg-white/5 text-white/50 hover:text-white"
+                              }`}
+                            >
+                              Cancelled
+                            </button>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 ))}

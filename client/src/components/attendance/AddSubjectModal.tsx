@@ -27,7 +27,9 @@ export default function AddSubjectModal({
 }: AddSubjectModalProps) {
   const [name, setName] = useState(subjectToEdit?.name || "");
   const [code, setCode] = useState(subjectToEdit?.code || "");
+  const [shortName, setShortName] = useState(subjectToEdit?.shortName || "");
   const [teacher, setTeacher] = useState(subjectToEdit?.teacher || "");
+  const [defaultRoom, setDefaultRoom] = useState(subjectToEdit?.defaultRoom || "");
   const [color, setColor] = useState(subjectToEdit?.color || COLOR_PALETTE[0]);
   const [minPercent, setMinPercent] = useState(subjectToEdit?.minPercent || 75);
   const [openingAttended, setOpeningAttended] = useState(
@@ -43,7 +45,9 @@ export default function AddSubjectModal({
     if (subjectToEdit) {
       setName(subjectToEdit.name);
       setCode(subjectToEdit.code || "");
+      setShortName(subjectToEdit.shortName || "");
       setTeacher(subjectToEdit.teacher || "");
+      setDefaultRoom(subjectToEdit.defaultRoom || "");
       setColor(subjectToEdit.color || COLOR_PALETTE[0]);
       setMinPercent(subjectToEdit.minPercent || 75);
       setOpeningAttended(subjectToEdit.openingAttended || 0);
@@ -70,7 +74,9 @@ export default function AddSubjectModal({
         await attendanceApi.updateSubject(subjectToEdit._id, {
           name: name.trim(),
           code: code.trim(),
+          shortName: shortName.trim().slice(0, 12),
           teacher: teacher.trim(),
+          defaultRoom: defaultRoom.trim(),
           color,
           minPercent: Number(minPercent),
           openingAttended: Number(openingAttended),
@@ -80,7 +86,9 @@ export default function AddSubjectModal({
         await attendanceApi.createSubject({
           name: name.trim(),
           code: code.trim(),
+          shortName: shortName.trim().slice(0, 12),
           teacher: teacher.trim(),
+          defaultRoom: defaultRoom.trim(),
           color,
           minPercent: Number(minPercent),
           openingAttended: Number(openingAttended),
@@ -158,6 +166,22 @@ export default function AddSubjectModal({
               />
             </div>
             <div>
+              <label className="block text-xs font-semibold text-white/80 mb-1.5">
+                BName (Short / Acronym)
+              </label>
+              <input
+                type="text"
+                maxLength={12}
+                placeholder="e.g. DBMS, OS, Java"
+                value={shortName}
+                onChange={(e) => setShortName(e.target.value.toUpperCase())}
+                className="w-full px-3.5 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-[#0A84FF]"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
               <label className="block text-xs font-semibold text-white/80 mb-1.5 flex items-center gap-1.5">
                 <User size={13} /> Teacher / Faculty
               </label>
@@ -166,6 +190,18 @@ export default function AddSubjectModal({
                 placeholder="e.g. Dr. Sharma"
                 value={teacher}
                 onChange={(e) => setTeacher(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-xs focus:outline-none focus:border-[#0A84FF]"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-white/80 mb-1.5">
+                Default Room / Classroom
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. LT04, Lab 3"
+                value={defaultRoom}
+                onChange={(e) => setDefaultRoom(e.target.value)}
                 className="w-full px-3.5 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-xs focus:outline-none focus:border-[#0A84FF]"
               />
             </div>
