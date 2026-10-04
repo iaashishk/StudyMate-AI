@@ -8,8 +8,8 @@ dotenv.config();
 const app = express();
 
 // ── Body parsing ────────────────────────────────────────────────────────────
-app.use(express.json({ limit: "16kb" }));
-app.use(express.urlencoded({ extended: true, limit: "16kb" }));
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 app.use(cookieParser());
 
 const allowedOrigins = [
@@ -52,6 +52,7 @@ import dashboardRouter from "./routes/dashboard.routes.js";
 import attendanceRouter from "./routes/attendance.routes.js";
 import assignmentRouter from "./routes/assignment.routes.js";
 import labRouter from "./routes/labCode.routes.js";
+import helpbotRouter from "./routes/helpbot.routes.js";
 
 app.use("/api/auth", authRouter);
 app.use("/api/subjects", subjectRouter);
@@ -60,6 +61,7 @@ app.use("/api/dashboard", dashboardRouter);
 app.use("/api/attendance", attendanceRouter);
 app.use("/api/assignments", assignmentRouter);
 app.use("/api/labs", labRouter);
+app.use("/api/helpbot", helpbotRouter);
 
 // ── Health check & Root info ────────────────────────────────────────────────
 app.get("/api/health", (_req, res) => {

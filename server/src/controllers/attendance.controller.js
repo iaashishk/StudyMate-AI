@@ -6,7 +6,10 @@ import {
   AttendanceEntry,
   BunkPlan,
   AttendanceSettings,
+  ImportJob,
 } from "../models/attendance.model.js";
+import { Subject } from "../models/subject.model.js";
+import { randomUUID } from "crypto";
 import { ApiError } from "../utils/api-error.js";
 import { ApiResponse } from "../utils/api-response.js";
 import { asyncHandler } from "../utils/async-handler.js";
@@ -379,8 +382,169 @@ export const clearTimetable = asyncHandler(async (req, res) => {
   );
 });
 
+// ── SMART DOCUMENT IMPORT PIPELINE (PRD Sections 4, 5, 6, 7, 9) ───────────────
+
+const CANONICAL_ALIASES = [
+  { canonical: "Computer Networks", shortName: "CN", type: "lecture", aliases: ["cn", "comp net", "computer network", "computer networks", "networking"] },
+  { canonical: "Data Base Management System", shortName: "DBMS", type: "lecture", aliases: ["dbms", "database", "data base", "data base management", "dbms lecture", "database management system"] },
+  { canonical: "Data Base Management System Lab", shortName: "DBMS Lab", type: "lab", aliases: ["dbms lab", "database lab", "data base lab", "dbms practical", "database management system lab"] },
+  { canonical: "Data Structure", shortName: "DS", type: "lecture", aliases: ["ds", "data structure", "data structures", "ds lecture"] },
+  { canonical: "Data Structure Lab", shortName: "DS Lab", type: "lab", aliases: ["ds lab", "data structure lab", "ds practical", "data structures lab"] },
+  { canonical: "Cloud Computing", shortName: "CC", type: "lecture", aliases: ["cc", "cloud", "cloud computing"] },
+  { canonical: "Java Programming", shortName: "Java", type: "lecture", aliases: ["java", "java programming", "elective-i java programming", "elective-ii java programming", "java prog", "java elective"] },
+  { canonical: "Java Programming Lab", shortName: "Java Lab", type: "lab", aliases: ["java lab", "java programming lab", "java practical"] },
+];
+
+const MODERN_SUBJECT_PALETTE = [
+  "#0A84FF", // Blue
+  "#30D158", // Green
+  "#BF5AF2", // Purple
+  "#FF9F0A", // Orange / Amber
+  "#64D2FF", // Cyan
+  "#5E5CE6", // Indigo
+  "#FF375F", // Rose
+  "#40C8E0", // Teal
+  "#FFD60A", // Yellow
+];
+
+function calculateDiceSimilarity(s1, s2) {
+  if (!s1 || !s2) return 0;
+  const a = s1.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const b = s2.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (a === b) return 1.0;
+  if (!a || !b) return 0;
+  if (a.includes(b) || b.includes(a)) return 0.88;
+
+  const getBigrams = (str) => {
+    const bigrams = new Set();
+    for (let i = 0; i < str.length - 1; i++) {
+      bigrams.add(str.slice(i, i + 2));
+    }
+    return bigrams;
+  };
+
+  const bg1 = getBigrams(a);
+  const bg2 = getBigrams(b);
+  let intersection = 0;
+  bg1.forEach((bg) => {
+    if (bg2.has(bg)) intersection++;
+  });
+
+  return (2.0 * intersection) / (bg1.size + bg2.size || 1);
+}
+
+function snapToVocabulary(rawText, legend = [], existingSubjects = [], expectedType = null) {
+  if (!rawText || !rawText.trim()) {
+    return { canonical: "Free Period", shortName: "Free", type: "lecture", confidence: 1.0, isFree: true };
+  }
+
+  const isLab = expectedType === "lab" || /lab|practical/i.test(rawText);
+
+  const clean = rawText
+    .replace(/\b(batch\s*[12]\/[12]|batch\s*[12])\b/gi, "")
+    .replace(/\(batch\s*[12]\/[12]\)/gi, "")
+    .trim();
+
+  let bestMatch = null;
+  let highestScore = 0;
+
+  // 1. Check against Canonical Aliases (respecting lab vs lecture)
+  for (const item of CANONICAL_ALIASES) {
+    if (isLab && item.type !== "lab") continue;
+    if (!isLab && item.type === "lab") continue;
+
+    const simCanonical = calculateDiceSimilarity(clean, item.canonical);
+    const simShort = calculateDiceSimilarity(clean, item.shortName);
+    let simAlias = 0;
+    for (const al of item.aliases) {
+      simAlias = Math.max(simAlias, calculateDiceSimilarity(clean, al));
+    }
+    const score = Math.max(simCanonical, simShort, simAlias);
+    if (score > highestScore) {
+      highestScore = score;
+      bestMatch = {
+        canonical: item.canonical,
+        shortName: item.shortName,
+        type: item.type,
+      };
+    }
+  }
+
+  // 2. Check against Legend from the document
+  for (const leg of legend) {
+    const legSubj = leg.subject || "";
+    const legIsLab = /lab|practical/i.test(legSubj);
+    if (isLab && !legIsLab) continue;
+    if (!isLab && legIsLab) continue;
+
+    const score = calculateDiceSimilarity(clean, legSubj);
+    if (score > highestScore) {
+      highestScore = score;
+      bestMatch = {
+        canonical: legSubj,
+        shortName: leg.shortName || legSubj.slice(0, 6).toUpperCase(),
+        teacher: leg.teacher || "",
+        type: legIsLab ? "lab" : "lecture",
+      };
+    }
+  }
+
+  // 3. Check against User's Existing Subjects in DB
+  for (const subj of existingSubjects) {
+    const subIsLab = /lab|practical/i.test(subj.name);
+    if (isLab && !subIsLab) continue;
+    if (!isLab && subIsLab) continue;
+
+    const score = Math.max(
+      calculateDiceSimilarity(clean, subj.name),
+      calculateDiceSimilarity(clean, subj.shortName || "")
+    );
+    if (score > highestScore) {
+      highestScore = score;
+      bestMatch = {
+        canonical: subj.name,
+        shortName: subj.shortName || subj.name.slice(0, 6).toUpperCase(),
+        code: subj.code || "",
+        teacher: subj.teacher || "",
+        defaultRoom: subj.defaultRoom || "",
+        matchedSubjectId: String(subj._id),
+        type: subIsLab ? "lab" : "lecture",
+      };
+    }
+  }
+
+  // 4. Fallback if strict filter had no match
+  if (!bestMatch) {
+    for (const item of CANONICAL_ALIASES) {
+      const score = Math.max(
+        calculateDiceSimilarity(clean, item.canonical),
+        calculateDiceSimilarity(clean, item.shortName)
+      );
+      if (score > highestScore) {
+        highestScore = score;
+        bestMatch = { canonical: item.canonical, shortName: item.shortName, type: item.type };
+      }
+    }
+  }
+
+  if (highestScore >= 0.70 && bestMatch) {
+    return {
+      ...bestMatch,
+      confidence: Math.min(1.0, highestScore >= 0.85 ? 0.98 : 0.82),
+    };
+  }
+
+  // Fallback: Cleaned text
+  return {
+    canonical: clean,
+    shortName: clean.slice(0, 6).toUpperCase(),
+    type: isLab ? "lab" : "lecture",
+    confidence: 0.45,
+  };
+}
+
 /**
- * 2b. AI Timetable Vision Extraction (Gemini Multimodal Vision)
+ * 2b. AI Timetable Vision Extraction (Gemini Multimodal Vision + Vocabulary Snapping)
  */
 export const parseAiTimetable = asyncHandler(async (req, res) => {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -407,12 +571,12 @@ CRITICAL INSTRUCTIONS:
   - Slot 3: 10:50 - 11:45
   - Slot 4: 11:45 - 12:40
 - Afternoon periods (after lunch, 14:30 onwards) are Slots 5 to 8:
-  - When column headers show combined 2-hour ranges like "2:30-4:20" and "4:25-6:15", break them into standard sequential period slots:
+  - Break combined 2-hour ranges into standard sequential 55-minute period slots:
     - Slot 5: 14:30 - 15:25
     - Slot 6: 15:25 - 16:20
     - Slot 7: 16:25 - 17:20
     - Slot 8: 17:20 - 18:15
-  - NEVER output overlapping start/end times in the "timings" array. Each slot must be strictly sequential!
+  - NEVER output overlapping start/end times in the "timings" array.
 
 2. MULTI-PERIOD DURATION & SLOTS ARRAY:
 - A 2-hour lecture block occupying 09:00-10:50 has slots: [1, 2].
@@ -429,14 +593,14 @@ CRITICAL INSTRUCTIONS:
 - Tuesday afternoon classes (slots 5-8) are in room "CSA305".
 - Wednesday afternoon classes (slots 5-8) are in room "303".
 - Labs are in room "Lab" or "CCIH" as indicated in cells.
-- Rooms (like "LT04", "CSA304", "CSA305", "303") are NOT subject course codes! Do NOT put room names in "code"! If no course code like MCA-101 is explicitly written, leave "code" empty ("").
+- Rooms are NOT subject codes! Leave "code" empty ("") unless a code like MCA-101 is explicitly shown.
 
 4. CORRELATE SUBJECTS, SHORT NAMES & FACULTY FROM LEGEND:
 - Read the faculty/subject legend at the bottom or margin (e.g. "Dr. Manvi: Cloud Computing, Dr. Manjeet: DS & DS Lab, Ms. Kiran: Computer Networks, Dr. Vedpal: Java & Java Lab, Ms. Palak: DBMS, Ms. Jyoti & Ms. Reena DBMS Lab").
-- Use clean, full subject names (e.g. "Cloud Computing", "Data Structure", "Computer Networks", "Java Programming", "Data Base Management System", "Data Structure Lab", "Java Programming Lab", "Data Base Management System Lab").
-- "shortName" must be the standard abbreviation: "CC", "DS", "CN", "Java", "DBMS", "DS Lab", "Java Lab", "DBMS Lab".
-- For batch-split lab cells (e.g. "Data Structure Lab (Batch 1/2)... JAVA Programming Lab (Batch 2/2)"), choose the primary lab subject and DO NOT include "Batch 1/2" or raw teacher names in the subject title.
-- "type" must be "lab" for labs/practicals, and "lecture" for normal lectures. DO NOT label lectures as labs!
+- Output the clean legend array so subjects and teachers are accurately linked.
+- Standard shortNames: "CC", "DS", "CN", "Java", "DBMS", "DS Lab", "Java Lab", "DBMS Lab".
+- If a cell has multiple batches (e.g. "DS Lab (Batch 1/2) and Java Lab (Batch 2/2)"), output each batch as a separate class item with "batch": "Batch 1/2" and "batch": "Batch 2/2".
+- "type" must be "lab" for labs/practicals, and "lecture" for normal lectures.
 
 Return ONLY valid JSON matching this schema:
 {
@@ -450,6 +614,22 @@ Return ONLY valid JSON matching this schema:
     {"slot": 7, "start": "16:25", "end": "17:20"},
     {"slot": 8, "start": "17:20", "end": "18:15"}
   ],
+  "legend": [
+    {"subject": "Cloud Computing", "teacher": "Dr. Manvi", "shortName": "CC"},
+    {"subject": "Data Structure", "teacher": "Dr. Manjeet", "shortName": "DS"},
+    {"subject": "Data Structure Lab", "teacher": "Dr. Manjeet", "shortName": "DS Lab"},
+    {"subject": "Computer Networks", "teacher": "Ms. Kiran", "shortName": "CN"},
+    {"subject": "Java Programming", "teacher": "Dr. Vedpal", "shortName": "Java"},
+    {"subject": "Java Programming Lab", "teacher": "Dr. Vedpal", "shortName": "Java Lab"},
+    {"subject": "Data Base Management System", "teacher": "Ms. Palak", "shortName": "DBMS"},
+    {"subject": "Data Base Management System Lab", "teacher": "Ms. Jyoti & Ms. Reena", "shortName": "DBMS Lab"}
+  ],
+  "roomNotes": [
+    {"day": "Monday", "session": "all", "room": "LT04"},
+    {"day": "Tuesday", "session": "forenoon", "room": "CSA304"},
+    {"day": "Tuesday", "session": "afternoon", "room": "CSA305"},
+    {"day": "Wednesday", "session": "afternoon", "room": "303"}
+  ],
   "schedule": [
     {
       "day": "Monday",
@@ -457,15 +637,19 @@ Return ONLY valid JSON matching this schema:
         {
           "slots": [1, 2],
           "subject": "Data Base Management System",
+          "subjectRaw": "Data Base Mgmt System",
           "code": "",
           "shortName": "DBMS",
           "type": "lecture",
+          "batch": null,
           "room": "LT04",
-          "teacher": "Ms. Palak"
+          "teacher": "Ms. Palak",
+          "confidence": 0.98
         }
       ]
     }
-  ]
+  ],
+  "warnings": []
 }`;
 
   let cleanMime = (mimeType || "").toLowerCase().trim();
@@ -476,13 +660,9 @@ Return ONLY valid JSON matching this schema:
   const candidateModels = [
     "gemini-3.5-flash-lite",
     "gemini-3.1-flash-lite",
-    "gemini-flash-lite-latest",
-    "gemini-2.5-flash-lite",
-    "gemini-pro-latest",
-    "gemini-2.5-pro",
-    "gemini-3.8-flash",
-    "gemini-3.7-flash",
     "gemini-3.5-flash",
+    "gemini-3.8-flash",
+    "gemini-flash-latest",
   ];
   let lastError = null;
 
@@ -535,11 +715,168 @@ Return ONLY valid JSON matching this schema:
         continue;
       }
 
+      // Fetch user's existing subjects for snapping
+      const existingSubjects = await AttendanceSubject.find({
+        userId: req.user._id,
+        archivedAt: null,
+      });
+
+      const legend = parsed.legend || [];
+      const roomNotes = parsed.roomNotes || [];
+      const timings = parsed.timings || [];
+      const rawSchedule = parsed.schedule || [];
+
+      // Build default timing map for fast lookup
+      const timingMap = new Map();
+      timings.forEach((t) => timingMap.set(t.slot, t));
+
+      const normalizedSchedule = [];
+      const distinctSubjectsMap = new Map();
+      const issues = [];
+      let colorIdx = 0;
+      let hasBatchSplits = false;
+      const detectedBatchesSet = new Set();
+
+      for (const daySchedule of rawSchedule) {
+        const dayName = daySchedule.day;
+        const normalizedClasses = [];
+        for (const cls of daySchedule.classes || []) {
+          const expectedType = cls.type || (/lab|practical/i.test(cls.subject || "") ? "lab" : "lecture");
+          const rawTextToSnap = cls.subject || cls.subjectRaw || "";
+          const snapped = snapToVocabulary(rawTextToSnap, legend, existingSubjects, expectedType);
+
+          // Canonical subject name
+          const finalSubjectName = snapped.canonical || cls.subject || "Free Period";
+          const finalShortName = snapped.shortName || cls.shortName || finalSubjectName.slice(0, 6).toUpperCase();
+          const finalType = cls.type || snapped.type || (/lab|practical/i.test(finalSubjectName) ? "lab" : "lecture");
+
+          // Teacher resolution
+          let finalTeacher = cls.teacher || snapped.teacher || "";
+          if (!finalTeacher) {
+            const legMatch = legend.find((l) => calculateDiceSimilarity(l.subject, finalSubjectName) >= 0.75);
+            if (legMatch?.teacher) finalTeacher = legMatch.teacher;
+          }
+
+          // Room resolution
+          let finalRoom = cls.room || snapped.defaultRoom || "";
+          if (!finalRoom) {
+            const firstSlot = (cls.slots && cls.slots[0]) || 1;
+            const isForenoon = firstSlot <= 4;
+            const noteMatch = roomNotes.find(
+              (rn) =>
+                rn.day?.toLowerCase() === dayName?.toLowerCase() &&
+                (rn.session === "all" || (isForenoon ? rn.session === "forenoon" : rn.session === "afternoon"))
+            );
+            if (noteMatch?.room) finalRoom = noteMatch.room;
+            else if (dayName?.toLowerCase() === "monday") finalRoom = "LT04";
+            else if (finalType === "lab") finalRoom = "Lab";
+          }
+
+          // Batch detection
+          let finalBatch = cls.batch || null;
+          if (!finalBatch) {
+            const fullCellString = `${cls.subjectRaw || ""} ${cls.subject || ""}`;
+            if (/\b(?:batch\s*1\/2|1\/2)\b/i.test(fullCellString)) finalBatch = "Batch 1/2";
+            else if (/\b(?:batch\s*2\/2|2\/2)\b/i.test(fullCellString)) finalBatch = "Batch 2/2";
+          }
+          if (finalBatch) {
+            hasBatchSplits = true;
+            detectedBatchesSet.add(finalBatch);
+          }
+
+          // Block ID & span calculation
+          const slotIndices = Array.isArray(cls.slots) && cls.slots.length > 0 ? cls.slots : [1];
+          const blockSpan = slotIndices.length;
+          const blockId = blockSpan > 1 ? `block_${dayName.toLowerCase()}_${slotIndices[0]}_${slotIndices[slotIndices.length - 1]}` : null;
+
+          // Confidence & Issues Check
+          const confidence = cls.confidence != null ? Number(cls.confidence) : snapped.confidence;
+          if (confidence < 0.8) {
+            issues.push({
+              field: `${dayName} ${slotIndices.join("-")}: ${finalSubjectName}`,
+              message: `Subject text "${rawTextToSnap}" had lower match confidence (${Math.round(confidence * 100)}%).`,
+              severity: confidence < 0.5 ? "red" : "amber",
+              suggestions: legend.slice(0, 3).map((l) => l.subject),
+            });
+          }
+
+          // Register in distinctSubjectsMap
+          if (!distinctSubjectsMap.has(finalSubjectName)) {
+            const assignedColor = snapped.color || MODERN_SUBJECT_PALETTE[colorIdx % MODERN_SUBJECT_PALETTE.length];
+            colorIdx++;
+            distinctSubjectsMap.set(finalSubjectName, {
+              key: `subj_${finalSubjectName.toLowerCase().replace(/[^a-z0-9]/g, "")}`,
+              name: finalSubjectName,
+              shortName: finalShortName,
+              code: cls.code || snapped.code || "",
+              teacher: finalTeacher,
+              room: finalRoom,
+              color: assignedColor,
+              matchedSubjectId: snapped.matchedSubjectId || null,
+              slotCount: 0,
+            });
+          }
+          distinctSubjectsMap.get(finalSubjectName).slotCount += slotIndices.length;
+
+          normalizedClasses.push({
+            slots: slotIndices,
+            subject: finalSubjectName,
+            subjectRaw: rawTextToSnap,
+            shortName: finalShortName,
+            code: cls.code || snapped.code || "",
+            type: finalType,
+            batch: finalBatch,
+            room: finalRoom,
+            teacher: finalTeacher,
+            confidence: Math.round(confidence * 100) / 100,
+            blockId,
+            blockSpan,
+          });
+        }
+
+        normalizedSchedule.push({
+          day: dayName,
+          classes: normalizedClasses,
+        });
+      }
+
+      const detectedSubjectsList = Array.from(distinctSubjectsMap.values());
+      const batchId = randomUUID();
+
+      // Persist ImportJob draft in MongoDB (PRD Section 9)
+      try {
+        await ImportJob.create({
+          userId: req.user._id,
+          batchId,
+          docType: "timetable",
+          status: "draft",
+          draft: {
+            timings,
+            schedule: normalizedSchedule,
+            subjects: detectedSubjectsList,
+            legend,
+            roomNotes,
+            warnings: parsed.warnings || [],
+          },
+          issues,
+        });
+      } catch (jobErr) {
+        console.warn("Could not save ImportJob draft:", jobErr.message);
+      }
+
       return res.status(200).json({
         success: true,
+        batchId,
         modelUsed: modelName,
-        timings: parsed.timings || [],
-        schedule: parsed.schedule || [],
+        timings,
+        schedule: normalizedSchedule,
+        detectedSubjects: detectedSubjectsList,
+        legend,
+        roomNotes,
+        hasBatchSplits,
+        availableBatches: Array.from(detectedBatchesSet),
+        issues,
+        warnings: parsed.warnings || [],
       });
     } catch (err) {
       lastError = err;
@@ -552,6 +889,192 @@ Return ONLY valid JSON matching this schema:
     error: lastError?.message || "AI timetable extraction unavailable. Falling back to OCR.",
     fallback: true,
   });
+});
+
+/**
+ * 2c. Atomic Smart Import Apply (PRD Section 4 & 9)
+ * Creates/updates subjects, links Study Planner subjects, filters practical batches,
+ * and saves timetable slots atomically under an importBatchId.
+ */
+export const applySmartImport = asyncHandler(async (req, res) => {
+  const {
+    batchId,
+    selectedBatch = "all",
+    replaceExisting = true,
+    createStudyPlannerSubjects = true,
+    subjects = [],
+    slots = [],
+    applyFrom,
+  } = req.body;
+
+  const semester = await getOrCreateSemester(req.user._id);
+  const effectiveDate = applyFrom || semester.startDate || toDateString();
+
+  // 1. Process and save subjects
+  const subjectMap = new Map(); // key/name -> AttendanceSubject._id
+  for (const s of subjects) {
+    if (!s.name || !s.name.trim()) continue;
+    const name = s.name.trim();
+
+    // Check if matching attendance subject already exists
+    let existingSubj = await AttendanceSubject.findOne({
+      userId: req.user._id,
+      archivedAt: null,
+      $or: [
+        { name: new RegExp(`^${name}$`, "i") },
+        { shortName: s.shortName ? new RegExp(`^${s.shortName}$`, "i") : null },
+      ].filter(Boolean),
+    });
+
+    if (existingSubj) {
+      if (s.teacher && !existingSubj.teacher) existingSubj.teacher = s.teacher;
+      if (s.room && !existingSubj.defaultRoom) existingSubj.defaultRoom = s.room;
+      if (s.code && !existingSubj.code) existingSubj.code = s.code;
+      if (s.shortName && !existingSubj.shortName) existingSubj.shortName = s.shortName;
+      await existingSubj.save();
+      subjectMap.set(s.key || name, existingSubj._id);
+      subjectMap.set(name, existingSubj._id);
+    } else {
+      const created = await AttendanceSubject.create({
+        userId: req.user._id,
+        name,
+        shortName: s.shortName || name.slice(0, 6).toUpperCase(),
+        code: s.code || "",
+        teacher: s.teacher || "",
+        defaultRoom: s.room || "",
+        color: s.color || "#0A84FF",
+        minPercent: s.minPercent || 75,
+      });
+
+      // Optionally create linked Study Planner subject (PRD Section 9 & 11)
+      if (createStudyPlannerSubjects) {
+        try {
+          const studySubj = await Subject.create({
+            userId: req.user._id,
+            name,
+            code: s.code || "",
+            color: s.color || "#0A84FF",
+            degree: "University",
+            semester: semester.name || "Semester 1",
+          });
+          created.linkedStudySubjectId = studySubj._id;
+          await created.save();
+        } catch (studyErr) {
+          console.warn("Could not create linked Study Planner subject:", studyErr.message);
+        }
+      }
+
+      subjectMap.set(s.key || name, created._id);
+      subjectMap.set(name, created._id);
+    }
+  }
+
+  // 2. Filter slots based on user's selected batch
+  let candidateSlots = slots;
+  if (selectedBatch && selectedBatch !== "all") {
+    candidateSlots = slots.filter((slot) => {
+      if (!slot.batch) return true; // lectures and shared classes apply to all
+      return slot.batch.toLowerCase().trim() === selectedBatch.toLowerCase().trim();
+    });
+  }
+
+  // 3. Handle Replace Existing Timetable
+  if (replaceExisting) {
+    const dayBefore = addDays(effectiveDate, -1);
+    await TimetableSlot.deleteMany({
+      userId: req.user._id,
+      effectiveFrom: { $gte: effectiveDate },
+    });
+    await TimetableSlot.updateMany(
+      {
+        userId: req.user._id,
+        effectiveFrom: { $lt: effectiveDate },
+        $or: [{ effectiveTo: null }, { effectiveTo: { $gte: effectiveDate } }],
+      },
+      { $set: { effectiveTo: dayBefore } }
+    );
+  }
+
+  // 4. Insert new slots referencing resolved subjectId
+  const newSlotsData = candidateSlots.map((s) => {
+    const resolvedSubjectId =
+      subjectMap.get(s.rawText) ||
+      subjectMap.get(s.subjectName) ||
+      subjectMap.get(s.subject) ||
+      s.matchedSubjectId ||
+      null;
+
+    return {
+      userId: req.user._id,
+      subjectId: resolvedSubjectId,
+      weekday: Number(s.weekday),
+      slotIndex: Number(s.slotIndex),
+      startTime: s.startTime || "09:00",
+      endTime: s.endTime || "10:00",
+      room: s.room || "",
+      slotType: s.slotType || s.type || "lecture",
+      batchLabel: s.batch || null,
+      blockId: s.blockId || null,
+      blockSpan: Number(s.blockSpan) || 1,
+      spanPeriods: Number(s.blockSpan) || 1,
+      importBatchId: batchId || null,
+      effectiveFrom: effectiveDate,
+      effectiveTo: null,
+      weekType: "all",
+    };
+  });
+
+  const inserted = await TimetableSlot.insertMany(newSlotsData);
+
+  // Update ImportJob if exists
+  if (batchId) {
+    await ImportJob.findOneAndUpdate(
+      { userId: req.user._id, batchId },
+      { status: "applied", appliedAt: new Date() }
+    ).catch(() => null);
+  }
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        batchId,
+        slotsCount: inserted.length,
+        subjectsCount: subjectMap.size,
+        applyFrom: effectiveDate,
+      },
+      `Timetable applied with ${inserted.length} slots and ${subjectMap.size} subjects`
+    )
+  );
+});
+
+/**
+ * 2d. Atomic Smart Import Undo (PRD Section 4 & 9)
+ * Reverts all timetable slots created under an importBatchId in one click.
+ */
+export const undoSmartImport = asyncHandler(async (req, res) => {
+  const { batchId } = req.body;
+  if (!batchId) {
+    throw new ApiError(400, "batchId is required for undo");
+  }
+
+  const deleteResult = await TimetableSlot.deleteMany({
+    userId: req.user._id,
+    importBatchId: batchId,
+  });
+
+  await ImportJob.findOneAndUpdate(
+    { userId: req.user._id, batchId },
+    { status: "reverted" }
+  ).catch(() => null);
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      { deletedSlotsCount: deleteResult.deletedCount, batchId },
+      `Undid import batch ${batchId}: removed ${deleteResult.deletedCount} timetable slots`
+    )
+  );
 });
 
 /**
@@ -615,11 +1138,9 @@ Return ONLY valid JSON matching this schema:
   const candidateModels = [
     "gemini-3.5-flash-lite",
     "gemini-3.1-flash-lite",
-    "gemini-flash-lite-latest",
-    "gemini-2.5-flash-lite",
-    "gemini-pro-latest",
-    "gemini-2.5-pro",
+    "gemini-3.5-flash",
     "gemini-3.8-flash",
+    "gemini-flash-latest",
   ];
   let lastError = null;
 

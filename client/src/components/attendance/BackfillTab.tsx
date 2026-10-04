@@ -140,11 +140,13 @@ export default function BackfillTab({
     }
   };
 
-  // Step 2: Toggle exception status for an individual session in preview
-  const handleToggleSessionStatus = (index: number, newStatus: AttendanceStatus) => {
+  // Mark every period in a grouped class together.
+  const handleToggleClassStatus = (indices: number[], newStatus: AttendanceStatus) => {
     if (!previewData) return;
     const updated = [...previewData.sessions];
-    updated[index] = { ...updated[index], status: newStatus };
+    for (const index of indices) {
+      updated[index] = { ...updated[index], status: newStatus };
+    }
     setPreviewData({ ...previewData, sessions: updated });
   };
 
@@ -166,13 +168,11 @@ export default function BackfillTab({
     showToast(`Marked all ${previewData.sessions.length} sessions as ${newStatus}`);
   };
 
-  // Group previewData.sessions by date maintaining originalIndex for toggle mutations
+  // Display adjacent periods for the same subject as one class, but retain each
+  // underlying period so attendance totals and saved records remain period-based.
   const dateGroups = useMemo(() => {
     if (!previewData) return [];
-    const map = new Map<
-      string,
-      Array<{ session: typeof previewData.sessions[0]; originalIndex: number }>
-    >();
+    const map = new Map<string, Array<{ session: typeof previewData.sessions[0]; originalIndex: number }>>();
     previewData.sessions.forEach((session, idx) => {
       if (!map.has(session.date)) {
         map.set(session.date, []);
@@ -181,6 +181,33 @@ export default function BackfillTab({
     });
 
     return Array.from(map.entries()).map(([date, items]) => {
+      const sortedItems = [...items].sort((a, b) =>
+        a.session.startTime.localeCompare(b.session.startTime)
+      );
+      const classes: Array<{
+        session: typeof previewData.sessions[0];
+        originalIndices: number[];
+        endTime: string;
+      }> = [];
+
+      for (const item of sortedItems) {
+        const previous = classes[classes.length - 1];
+        if (
+          previous &&
+          previous.session.subjectId === item.session.subjectId &&
+          previous.endTime === item.session.startTime
+        ) {
+          previous.endTime = item.session.endTime;
+          previous.originalIndices.push(item.originalIndex);
+        } else {
+          classes.push({
+            session: item.session,
+            originalIndices: [item.originalIndex],
+            endTime: item.session.endTime,
+          });
+        }
+      }
+
       const d = new Date(
         Number(date.split("-")[0]),
         Number(date.split("-")[1]) - 1,
@@ -197,7 +224,7 @@ export default function BackfillTab({
       return {
         date,
         dayName,
-        items,
+        classes,
         allPresent,
         allAbsent,
         allCancelled,
@@ -459,10 +486,10 @@ export default function BackfillTab({
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/[0.06] pb-3">
                 <div>
                   <h4 className="font-bold text-white text-base">
-                    Review Generated Sessions ({previewData.totalSessions})
+                    Review Classes ({dateGroups.reduce((total, group) => total + group.classes.length, 0)})
                   </h4>
                   <p className="text-xs text-[#8E8E93]">
-                    Grouped by day. Use the quick day buttons to mark an entire day absent/present, or toggle individual lectures for exceptions.
+                    Consecutive periods of the same class are grouped together. Choose a status once for the whole class.
                   </p>
                 </div>
                 <button
@@ -517,7 +544,7 @@ export default function BackfillTab({
                         <span className="font-bold text-white text-xs sm:text-sm">{group.dayName}</span>
                         <span className="text-[10px] text-[#8E8E93] font-mono">({group.date})</span>
                         <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 text-[#8E8E93]">
-                          {group.items.length} class{group.items.length !== 1 ? "es" : ""}
+                          {group.classes.length} class{group.classes.length !== 1 ? "es" : ""}
                         </span>
                       </div>
 
@@ -560,11 +587,11 @@ export default function BackfillTab({
                       </div>
                     </div>
 
-                    {/* Individual Session Rows within the Day */}
+                    {/* Consecutive periods of the same class share one attendance control. */}
                     <div className="space-y-1.5">
-                      {group.items.map(({ session, originalIndex }) => (
+                      {group.classes.map(({ session, originalIndices, endTime }) => (
                         <div
-                          key={originalIndex}
+                          key={`${session.subjectId}-${session.startTime}-${endTime}`}
                           className="p-2.5 rounded-xl bg-black/20 hover:bg-white/[0.04] border border-white/5 flex items-center justify-between gap-3 text-xs"
                         >
                           <div className="flex items-center gap-2.5 min-w-0">
@@ -575,16 +602,21 @@ export default function BackfillTab({
                             <div className="min-w-0">
                               <p className="font-bold text-white truncate text-xs">{session.subjectName}</p>
                               <p className="text-[10px] font-mono text-[#8E8E93]">
-                                {session.startTime}–{session.endTime}
+                                {session.startTime}–{endTime}
+                                {originalIndices.length > 1 && (
+                                  <span className="ml-2 text-white/40">
+                                    {originalIndices.length} periods
+                                  </span>
+                                )}
                               </p>
                             </div>
                           </div>
 
                           <div className="flex items-center gap-1 shrink-0">
                             <button
-                              onClick={() => handleToggleSessionStatus(originalIndex, "present")}
+                              onClick={() => handleToggleClassStatus(originalIndices, "present")}
                               className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold transition-all cursor-pointer ${
-                                session.status === "present"
+                                originalIndices.every((index) => previewData.sessions[index].status === "present")
                                   ? "bg-emerald-500 text-white shadow-sm"
                                   : "bg-white/5 text-white/50 hover:text-white"
                               }`}
@@ -592,9 +624,9 @@ export default function BackfillTab({
                               Present
                             </button>
                             <button
-                              onClick={() => handleToggleSessionStatus(originalIndex, "absent")}
+                              onClick={() => handleToggleClassStatus(originalIndices, "absent")}
                               className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold transition-all cursor-pointer ${
-                                session.status === "absent"
+                                originalIndices.every((index) => previewData.sessions[index].status === "absent")
                                   ? "bg-rose-500 text-white shadow-sm"
                                   : "bg-white/5 text-white/50 hover:text-white"
                               }`}
@@ -602,9 +634,9 @@ export default function BackfillTab({
                               Absent
                             </button>
                             <button
-                              onClick={() => handleToggleSessionStatus(originalIndex, "cancelled")}
+                              onClick={() => handleToggleClassStatus(originalIndices, "cancelled")}
                               className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold transition-all cursor-pointer ${
-                                session.status === "cancelled"
+                                originalIndices.every((index) => previewData.sessions[index].status === "cancelled")
                                   ? "bg-amber-500 text-white shadow-sm"
                                   : "bg-white/5 text-white/50 hover:text-white"
                               }`}

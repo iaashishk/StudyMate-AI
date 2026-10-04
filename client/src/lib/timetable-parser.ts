@@ -67,6 +67,8 @@ export interface ParsedTimetableSlotResult {
   code?: string;
   teacher?: string;
   matchedSubjectId: string | null;
+  batch?: string;
+  confidence?: number;
   blockId?: string;
   blockSpan?: number;
 }

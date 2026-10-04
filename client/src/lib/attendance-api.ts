@@ -101,6 +101,7 @@ export const attendanceApi = {
   parseAiTimetable: async (imageBase64: string, mimeType: string) => {
     const res = await api.post<{
       success: boolean;
+      batchId?: string;
       modelUsed?: string;
       error?: string;
       fallback?: boolean;
@@ -110,15 +111,82 @@ export const attendanceApi = {
         classes: Array<{
           slots: number[];
           subject: string;
+          subjectRaw?: string;
           code?: string;
           shortName?: string;
           type?: "lecture" | "lab" | "tutorial";
+          batch?: string | null;
           room?: string;
           teacher?: string;
+          confidence?: number;
+          blockId?: string | null;
+          blockSpan?: number;
         }>;
       }>;
+      detectedSubjects?: Array<{
+        key: string;
+        name: string;
+        shortName: string;
+        code: string;
+        teacher: string;
+        room: string;
+        color?: string;
+        matchedSubjectId: string | null;
+        slotCount: number;
+      }>;
+      legend?: Array<{ subject: string; teacher: string; shortName?: string }>;
+      roomNotes?: Array<{ day: string; session: string; room: string }>;
+      hasBatchSplits?: boolean;
+      availableBatches?: string[];
+      issues?: Array<{
+        field: string;
+        message: string;
+        severity: "green" | "amber" | "red";
+        suggestions?: string[];
+      }>;
+      warnings?: string[];
     }>("/attendance/timetable/parse-ai", { imageBase64, mimeType });
     return res.data;
+  },
+
+  applySmartImport: async (payload: {
+    batchId?: string;
+    selectedBatch?: string;
+    replaceExisting?: boolean;
+    createStudyPlannerSubjects?: boolean;
+    subjects: Array<{
+      key: string;
+      name: string;
+      shortName: string;
+      code: string;
+      teacher: string;
+      room: string;
+      color?: string;
+      matchedSubjectId?: string | null;
+      slotCount?: number;
+    }>;
+    slots: unknown[];
+    applyFrom?: string;
+  }) => {
+    const res = await api.post<{
+      data: {
+        batchId: string;
+        slotsCount: number;
+        subjectsCount: number;
+        applyFrom: string;
+      };
+    }>("/attendance/import/apply", payload);
+    return res.data.data;
+  },
+
+  undoSmartImport: async (batchId: string) => {
+    const res = await api.post<{
+      data: {
+        batchId: string;
+        deletedSlotsCount: number;
+      };
+    }>("/attendance/import/undo", { batchId });
+    return res.data.data;
   },
 
   // Day & Marking

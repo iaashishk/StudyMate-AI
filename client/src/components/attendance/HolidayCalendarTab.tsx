@@ -114,8 +114,12 @@ export default function HolidayCalendarTab({
   };
 
   const today = todayLocalCivil();
-  const upcomingHolidays = holidays.filter((h) => h.date >= today);
-  const pastHolidays = holidays.filter((h) => h.date < today);
+  const upcomingHolidays = holidays
+    .filter((h) => h.date >= today)
+    .sort((a, b) => a.date.localeCompare(b.date) || a.label.localeCompare(b.label));
+  const pastHolidays = holidays
+    .filter((h) => h.date < today)
+    .sort((a, b) => b.date.localeCompare(a.date) || a.label.localeCompare(b.label));
 
   return (
     <div className="space-y-6">
@@ -184,12 +188,12 @@ export default function HolidayCalendarTab({
         {/* Left 2 Cols: Holidays List & Upcoming ────────────────────────────── */}
         <div className="lg:col-span-2 space-y-4">
           <div className="p-5 rounded-3xl bg-[#141414] border border-white/[0.08] space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
               <h4 className="font-extrabold text-white text-base tracking-tight flex items-center gap-2">
                 <CalendarDays size={18} className="text-[#0A84FF]" />
                 Upcoming Holidays ({upcomingHolidays.length})
               </h4>
-              <span className="text-xs text-[#8E8E93]">
+              <span className="text-[11px] text-[#8E8E93] sm:text-xs">
                 {holidays.length} Total Registered
               </span>
             </div>
@@ -214,6 +218,11 @@ export default function HolidayCalendarTab({
               </div>
             ) : (
               <div className="space-y-2 max-h-[480px] overflow-y-auto pr-1">
+                {upcomingHolidays.length === 0 && (
+                  <div className="rounded-2xl border border-white/5 bg-white/[0.02] px-4 py-6 text-center text-xs text-[#8E8E93]">
+                    No upcoming holidays. Past holidays are listed below.
+                  </div>
+                )}
                 {upcomingHolidays.map((h) => {
                   const [y, m, d] = h.date.split("-").map(Number);
                   const formatted = new Date(y, m - 1, d).toLocaleDateString("en-US", {
@@ -226,24 +235,25 @@ export default function HolidayCalendarTab({
                   return (
                     <div
                       key={h._id}
-                      className="p-3.5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.05] border border-white/5 flex items-center justify-between gap-3 text-xs transition-all"
+                      className="flex items-center justify-between gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.025] p-3 transition-colors hover:border-white/10 hover:bg-white/[0.045] sm:p-3.5"
                     >
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/25 flex items-center justify-center text-amber-400 shrink-0">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-amber-500/25 bg-amber-500/10 text-amber-400">
                           <Palmtree size={16} />
                         </div>
-                        <div>
-                          <p className="font-bold text-white text-sm tracking-tight">{cleanHolidayDisplay(h.label)}</p>
-                          <p className="text-[11px] font-mono text-[#8E8E93]">
-                            {formatted} ({h.date})
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-bold tracking-tight text-white">{cleanHolidayDisplay(h.label)}</p>
+                          <p className="mt-0.5 text-[11px] text-[#8E8E93]">
+                            {formatted}
                           </p>
                         </div>
                       </div>
 
                       <button
                         onClick={() => handleDeleteHoliday(h._id, h.label)}
-                        className="p-2 rounded-xl text-white/40 hover:text-rose-400 hover:bg-white/5 transition-colors cursor-pointer"
+                        className="shrink-0 rounded-xl p-2 text-white/40 transition-colors hover:bg-rose-500/10 hover:text-rose-400 cursor-pointer"
                         title="Remove holiday"
+                        aria-label={`Remove ${cleanHolidayDisplay(h.label)}`}
                       >
                         <Trash2 size={14} />
                       </button>
@@ -259,14 +269,16 @@ export default function HolidayCalendarTab({
                     {pastHolidays.map((h) => (
                       <div
                         key={h._id}
-                        className="p-2.5 rounded-xl bg-white/[0.01] border border-white/5 opacity-60 hover:opacity-100 flex items-center justify-between gap-3 text-xs"
+                        className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.04] bg-white/[0.01] p-2.5 text-xs opacity-60 transition-opacity hover:opacity-100"
                       >
-                        <span className="font-medium text-white/80">
-                          {cleanHolidayDisplay(h.label)} — <span className="font-mono text-[#8E8E93]">{h.date}</span>
+                        <span className="min-w-0 truncate font-medium text-white/80">
+                          {cleanHolidayDisplay(h.label)} <span className="text-[#8E8E93]">— {h.date}</span>
                         </span>
                         <button
                           onClick={() => handleDeleteHoliday(h._id, h.label)}
-                          className="p-1 text-white/30 hover:text-rose-400 cursor-pointer"
+                          className="shrink-0 rounded-lg p-1 text-white/30 hover:bg-rose-500/10 hover:text-rose-400 cursor-pointer"
+                          title="Remove past holiday"
+                          aria-label={`Remove ${cleanHolidayDisplay(h.label)}`}
                         >
                           <Trash2 size={13} />
                         </button>

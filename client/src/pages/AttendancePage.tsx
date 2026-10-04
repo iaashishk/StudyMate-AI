@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   CalendarDays,
   LayoutDashboard,
@@ -28,6 +28,8 @@ export default function AttendancePage() {
   >("today");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
+  const [attendanceDate, setAttendanceDate] = useState<string | undefined>();
+  const clearAttendanceDate = useCallback(() => setAttendanceDate(undefined), []);
 
   const loadPendingCount = async () => {
     try {
@@ -43,18 +45,19 @@ export default function AttendancePage() {
   }, []);
 
   const tabs = [
-    { id: "today", label: "Today", icon: LayoutDashboard },
-    { id: "brain", label: "Academic Brain", icon: Brain },
-    { id: "subjects", label: "Subjects & Bunks", icon: BookOpen },
-    { id: "timetable", label: "Weekly Timetable", icon: CalendarDays },
-    { id: "holidays", label: "Holiday Calendar", icon: Palmtree },
-    { id: "planner", label: "Bunk Planner & Forecast", icon: Sparkles },
+    { id: "today", label: "Today", shortLabel: "Today", icon: LayoutDashboard },
+    { id: "brain", label: "Academic Brain", shortLabel: "Brain", icon: Brain },
+    { id: "subjects", label: "Subjects & Bunks", shortLabel: "Subjects", icon: BookOpen },
+    { id: "timetable", label: "Weekly Timetable", shortLabel: "Timetable", icon: CalendarDays },
+    { id: "holidays", label: "Holiday Calendar", shortLabel: "Holidays", icon: Palmtree },
+    { id: "planner", label: "Bunk Planner & Forecast", shortLabel: "Bunk Planner", icon: Sparkles },
     {
       id: "backfill",
       label: `Back-fill${pendingCount > 0 ? ` (${pendingCount})` : ""}`,
+      shortLabel: `Backfill${pendingCount > 0 ? ` (${pendingCount})` : ""}`,
       icon: History,
     },
-    { id: "reports", label: "Reports & Charts", icon: BarChart2 },
+    { id: "reports", label: "Reports & Charts", shortLabel: "Reports", icon: BarChart2 },
   ];
 
   return (
@@ -76,7 +79,7 @@ export default function AttendancePage() {
                 </span>
               </div>
               <p className="text-xs text-[#8E8E93]">
-                Daily marking, timetable versioning, live bunk thresholds &amp; semester forecasting
+                Your classes and attendance
               </p>
             </div>
           </div>
@@ -93,15 +96,15 @@ export default function AttendancePage() {
       </div>
 
       {/* Navigation Sub-Tabs */}
-      <div className="flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-none border-b border-white/[0.08]">
-        {tabs.map(({ id, label, icon: Icon }) => {
+      <div className="flex items-center gap-1.5 overflow-x-auto overscroll-x-contain pb-2 scrollbar-none border-b border-white/[0.08]">
+        {tabs.map(({ id, label, shortLabel, icon: Icon }) => {
           const isActive = activeTab === id;
           const isBrain = id === "brain";
           return (
             <button
               key={id}
               onClick={() => setActiveTab(id as any)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+              className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-2xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
                 isActive
                   ? isBrain
                     ? "bg-purple-500 text-white shadow-lg shadow-purple-500/20"
@@ -111,8 +114,9 @@ export default function AttendancePage() {
                   : "text-[#8E8E93] hover:text-white hover:bg-white/5"
               }`}
             >
-              <Icon size={15} />
-              <span>{label}</span>
+              <Icon size={14} className="sm:size-[15px]" />
+              <span className="hidden sm:inline">{label}</span>
+              <span className="sm:hidden">{shortLabel}</span>
               {id === "backfill" && pendingCount > 0 && (
                 <span className="w-2 h-2 rounded-full bg-amber-400" />
               )}
@@ -126,6 +130,8 @@ export default function AttendancePage() {
         <TodayTab
           onNavigateTab={(tab) => setActiveTab(tab as any)}
           pendingCount={pendingCount}
+          initialDate={attendanceDate}
+          onInitialDateConsumed={clearAttendanceDate}
         />
       )}
 
@@ -156,7 +162,8 @@ export default function AttendancePage() {
       {activeTab === "backfill" && (
         <BackfillTab
           onRefreshStats={loadPendingCount}
-          onNavigateToDay={() => {
+          onNavigateToDay={(date) => {
+            setAttendanceDate(date);
             setActiveTab("today");
           }}
         />

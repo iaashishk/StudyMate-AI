@@ -61,6 +61,15 @@ const attendanceSubjectSchema = new Schema(
       type: Date,
       default: null,
     },
+    aliases: [{
+      type: String,
+      trim: true,
+    }],
+    linkedStudySubjectId: {
+      type: Schema.Types.ObjectId,
+      ref: "Subject",
+      default: null,
+    },
   },
   { timestamps: true }
 );
@@ -126,6 +135,19 @@ const timetableSlotSchema = new Schema(
       default: null,
     },
     blockSpan: {
+      type: Number,
+      default: 1,
+    },
+    batchLabel: {
+      type: String,
+      default: null,
+    },
+    importBatchId: {
+      type: String,
+      default: null,
+      index: true,
+    },
+    spanPeriods: {
       type: Number,
       default: 1,
     },
@@ -364,3 +386,49 @@ export const AttendanceSettings = mongoose.model(
   "AttendanceSettings",
   attendanceSettingsSchema
 );
+
+// ── Smart Import Job & Draft (PRD Section 9) ──────────────────────────────────
+const importJobSchema = new Schema(
+  {
+    userId: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+      index: true,
+    },
+    batchId: {
+      type: String,
+      required: true,
+      index: true,
+    },
+    docType: {
+      type: String,
+      enum: ["timetable", "holiday", "academic_calendar", "auto"],
+      default: "timetable",
+    },
+    status: {
+      type: String,
+      enum: ["draft", "applied", "reverted"],
+      default: "draft",
+    },
+    draft: {
+      type: Schema.Types.Mixed,
+      default: {},
+    },
+    issues: [
+      {
+        field: String,
+        message: String,
+        severity: { type: String, enum: ["green", "amber", "red"], default: "amber" },
+        suggestions: [String],
+      },
+    ],
+    appliedAt: {
+      type: Date,
+      default: null,
+    },
+  },
+  { timestamps: true }
+);
+
+export const ImportJob = mongoose.model("ImportJob", importJobSchema);

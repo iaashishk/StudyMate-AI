@@ -10,7 +10,6 @@ import {
   Palmtree,
   CheckCheck,
   AlertCircle,
-  Clock,
   MapPin,
   Sparkles,
   RotateCcw,
@@ -27,10 +26,47 @@ import ExtraSessionModal from "./ExtraSessionModal";
 interface TodayTabProps {
   onNavigateTab: (tab: string) => void;
   pendingCount: number;
+  initialDate?: string;
+  onInitialDateConsumed?: () => void;
 }
 
-export default function TodayTab({ onNavigateTab, pendingCount }: TodayTabProps) {
-  const [currentDate, setCurrentDate] = useState<string>(todayLocalCivil());
+function getContiguousClassIndices(sessions: AttendanceSession[], index: number): number[] {
+  const current = sessions[index];
+  if (!current?.subjectId || current.source === "extra") return [index];
+
+  const isSameContinuousClass = (candidate: AttendanceSession | undefined) =>
+    Boolean(
+      candidate &&
+        candidate.source !== "extra" &&
+        candidate.subjectId === current.subjectId &&
+        (candidate.slotType || "lecture") === (current.slotType || "lecture") &&
+        (candidate.room || "") === (current.room || "")
+    );
+
+  let start = index;
+  while (start > 0) {
+    const previous = sessions[start - 1];
+    if (!isSameContinuousClass(previous) || previous.endTime !== sessions[start].startTime) break;
+    start--;
+  }
+
+  let end = index;
+  while (end < sessions.length - 1) {
+    const next = sessions[end + 1];
+    if (!isSameContinuousClass(next) || sessions[end].endTime !== next.startTime) break;
+    end++;
+  }
+
+  return Array.from({ length: end - start + 1 }, (_, offset) => start + offset);
+}
+
+export default function TodayTab({
+  onNavigateTab,
+  pendingCount,
+  initialDate,
+  onInitialDateConsumed,
+}: TodayTabProps) {
+  const [currentDate, setCurrentDate] = useState<string>(initialDate || todayLocalCivil());
   const [data, setData] = useState<DaySessionsResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -83,6 +119,12 @@ export default function TodayTab({ onNavigateTab, pendingCount }: TodayTabProps)
     loadDay(currentDate);
   }, [currentDate, loadDay]);
 
+  useEffect(() => {
+    if (!initialDate) return;
+    setCurrentDate(initialDate);
+    onInitialDateConsumed?.();
+  }, [initialDate, onInitialDateConsumed]);
+
   const changeDateBy = (offset: number) => {
     setCurrentDate(addDaysCivil(currentDate, offset));
   };
@@ -112,7 +154,7 @@ export default function TodayTab({ onNavigateTab, pendingCount }: TodayTabProps)
     });
 
     const statusLabel =
-      status === "present" ? "Present" : status === "absent" ? "Bunked" : "Cancelled";
+      status === "present" ? "Present" : status === "absent" ? "Absent" : "Cancelled";
     showUndoToast(`Marked ${subjectName} as ${statusLabel}`, {
       sessionIndex,
       previousStatus,
@@ -138,7 +180,7 @@ export default function TodayTab({ onNavigateTab, pendingCount }: TodayTabProps)
     }
   };
 
-  // Batch Mark Multi-Hour Block (e.g. 4-hour lab or 2-hour class)
+  // Mark all periods in a continuous class block together.
   const handleMarkBlock = async (indices: number[], status: AttendanceStatus) => {
     if (!data) return;
     const targetSessions = indices
@@ -160,9 +202,11 @@ export default function TodayTab({ onNavigateTab, pendingCount }: TodayTabProps)
     });
 
     const statusLabel =
-      status === "present" ? "Present" : status === "absent" ? "Bunked" : "Cancelled";
+      status === "present" ? "Present" : status === "absent" ? "Absent" : "Cancelled";
     showUndoToast(
-      `Marked all ${targetSessions.length} periods of ${subjectName} as ${statusLabel}`
+      targetSessions.length > 1
+        ? `Marked ${subjectName} (${targetSessions.length} periods) as ${statusLabel}`
+        : `Marked ${subjectName} as ${statusLabel}`
     );
 
     // 2. Background Sync
@@ -181,6 +225,55 @@ export default function TodayTab({ onNavigateTab, pendingCount }: TodayTabProps)
       console.error("Batch mark failed, rolling back", err);
       loadDay(currentDate);
       showUndoToast("Failed to save block marks. Reverting...");
+    }
+  };
+
+  const handleUnmarkBlock = async (indices: number[]) => {
+    if (!data) return;
+    const targetSessions = indices
+      .map((index) => ({ index, session: data.sessions[index] }))
+      .filter(({ session }) => session?.subjectId);
+    if (targetSessions.length === 0) return;
+
+    const entries = targetSessions.filter(({ session }) => session.entryId);
+    if (entries.length !== targetSessions.length) {
+      await loadDay(currentDate);
+      showUndoToast("Could not clear this mark. Refresh and try again.");
+      return;
+    }
+
+    const updatedSessions = [...data.sessions];
+    for (const { index, session } of targetSessions) {
+      updatedSessions[index] = { ...session, status: null, entryId: null };
+    }
+    setData({
+      ...data,
+      sessions: updatedSessions,
+      allMarked: updatedSessions.every((session) => session.status !== null),
+    });
+
+    try {
+      await Promise.all(entries.map(({ session }) => attendanceApi.deleteEntry(session.entryId!)));
+      showUndoToast("Attendance mark cleared");
+      await loadDay(currentDate);
+    } catch (err) {
+      console.error("Unmark attendance failed", err);
+      showUndoToast("Could not clear the mark. Changes restored.");
+      await loadDay(currentDate);
+    }
+  };
+
+  const handleToggleBlockMark = (
+    indices: number[],
+    status: AttendanceStatus,
+    isAlreadySelected: boolean
+  ) => {
+    if (isAlreadySelected) {
+      void handleUnmarkBlock(indices);
+    } else if (indices.length === 1) {
+      void handleMark(indices[0], status);
+    } else {
+      void handleMarkBlock(indices, status);
     }
   };
 
@@ -314,15 +407,19 @@ export default function TodayTab({ onNavigateTab, pendingCount }: TodayTabProps)
         const targetIdx = data.sessions.findIndex((s) => s.status === null);
         const idx = targetIdx >= 0 ? targetIdx : 0;
 
+        const classIndices = getContiguousClassIndices(data.sessions, idx);
         if (e.key.toLowerCase() === "p") {
           e.preventDefault();
-          handleMark(idx, "present");
+          if (classIndices.length === 1) handleMark(idx, "present");
+          else handleMarkBlock(classIndices, "present");
         } else if (e.key.toLowerCase() === "b" || e.key.toLowerCase() === "a") {
           e.preventDefault();
-          handleMark(idx, "absent");
+          if (classIndices.length === 1) handleMark(idx, "absent");
+          else handleMarkBlock(classIndices, "absent");
         } else if (e.key.toLowerCase() === "c") {
           e.preventDefault();
-          handleMark(idx, "cancelled");
+          if (classIndices.length === 1) handleMark(idx, "cancelled");
+          else handleMarkBlock(classIndices, "cancelled");
         }
       }
     };
@@ -389,32 +486,32 @@ export default function TodayTab({ onNavigateTab, pendingCount }: TodayTabProps)
 
       {/* ── Date Navigator & Fast Controls ─────────────────────────────────── */}
       <div className="p-4 sm:p-5 rounded-3xl bg-[#141414] border border-white/[0.08] space-y-4 shadow-xl">
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          {/* Date Selector */}
-          <div className="flex items-center gap-2 w-full md:w-auto justify-between md:justify-start">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3.5">
+          {/* Date Selector Header */}
+          <div className="flex items-center justify-between gap-2 w-full lg:w-auto">
             <button
               onClick={() => changeDateBy(-1)}
-              className="p-2.5 rounded-2xl bg-white/5 hover:bg-white/10 text-white/80 hover:text-white transition-colors cursor-pointer"
+              className="p-2 sm:p-2.5 rounded-2xl bg-white/5 hover:bg-white/10 text-white/80 hover:text-white transition-colors cursor-pointer shrink-0"
               title="Previous Day (Arrow Left)"
             >
               <ChevronLeft size={18} />
             </button>
 
-            <div className="flex items-center gap-3 text-center px-1">
-              <CalendarIcon size={20} className="text-[#0A84FF]" />
-              <div>
-                <div className="flex items-center gap-2 justify-center">
-                  <span className="font-bold text-white text-base sm:text-lg tracking-tight">
+            <div className="flex items-center gap-2.5 text-center px-1 min-w-0">
+              <CalendarIcon size={18} className="text-[#0A84FF] shrink-0 hidden sm:block" />
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 justify-center flex-wrap">
+                  <span className="font-bold text-white text-base sm:text-lg tracking-tight truncate">
                     {dayName}
                   </span>
                   {isToday && (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#0A84FF]/20 text-[#0A84FF] border border-[#0A84FF]/30">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#0A84FF]/20 text-[#0A84FF] border border-[#0A84FF]/30 shrink-0">
                       TODAY
                     </span>
                   )}
                   {data?.isHoliday && (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                      HOLIDAY: {data.holiday?.label}
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 truncate max-w-[150px]">
+                      {data.holiday?.label || "Holiday"}
                     </span>
                   )}
                 </div>
@@ -424,57 +521,57 @@ export default function TodayTab({ onNavigateTab, pendingCount }: TodayTabProps)
 
             <button
               onClick={() => changeDateBy(1)}
-              className="p-2.5 rounded-2xl bg-white/5 hover:bg-white/10 text-white/80 hover:text-white transition-colors cursor-pointer"
+              className="p-2 sm:p-2.5 rounded-2xl bg-white/5 hover:bg-white/10 text-white/80 hover:text-white transition-colors cursor-pointer shrink-0"
               title="Next Day (Arrow Right)"
             >
               <ChevronRight size={18} />
             </button>
           </div>
 
-          {/* Quick Date Switcher & Fast Actions */}
-          <div className="flex items-center gap-2 w-full md:w-auto justify-end flex-wrap">
-            {!isToday && (
-              <button
-                onClick={() => setCurrentDate(todayLocalCivil())}
-                className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-white transition-colors cursor-pointer"
-              >
-                Go to Today
-              </button>
-            )}
-
+          {/* Date Picker & Fast Actions Toolbar */}
+          <div className="flex items-center gap-2 w-full lg:w-auto overflow-x-auto pb-1 scrollbar-none sm:overflow-visible sm:pb-0 sm:flex-wrap lg:justify-end">
             <input
               type="date"
               value={currentDate}
               onChange={(e) => e.target.value && setCurrentDate(e.target.value)}
-              className="px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs text-white font-mono focus:outline-none focus:border-[#0A84FF] cursor-pointer"
+              className="px-2.5 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs text-white font-mono focus:outline-none focus:border-[#0A84FF] cursor-pointer shrink-0"
             />
+
+            {!isToday && (
+              <button
+                onClick={() => setCurrentDate(todayLocalCivil())}
+                className="px-2.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-white transition-colors cursor-pointer shrink-0"
+              >
+                Today
+              </button>
+            )}
 
             <button
               onClick={handleBulkPresent}
               disabled={actionLoading || totalClasses === 0}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#0A84FF]/15 hover:bg-[#0A84FF]/25 border border-[#0A84FF]/30 text-[#0A84FF] text-xs font-bold transition-all disabled:opacity-40 cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0A84FF]/15 hover:bg-[#0A84FF]/25 border border-[#0A84FF]/30 text-[#0A84FF] text-xs font-bold transition-all disabled:opacity-40 cursor-pointer shrink-0 whitespace-nowrap"
               title="Mark all today's sessions as Present"
             >
-              <CheckCheck size={15} />
+              <CheckCheck size={14} />
               <span>Mark All Present</span>
             </button>
 
             <button
               onClick={handleHoliday}
               disabled={actionLoading}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 text-xs font-medium transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 text-xs font-medium transition-colors cursor-pointer shrink-0 whitespace-nowrap"
               title="Mark date as holiday or off-day"
             >
-              <Palmtree size={14} className="text-amber-400" />
+              <Palmtree size={13} className="text-amber-400" />
               <span>Holiday</span>
             </button>
 
             <button
               onClick={() => setIsExtraModalOpen(true)}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 text-xs font-bold transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 text-xs font-bold transition-colors cursor-pointer shrink-0 whitespace-nowrap"
               title="Add an extra session or surprise test"
             >
-              <Plus size={14} />
+              <Plus size={13} />
               <span>Extra Class</span>
             </button>
 
@@ -482,45 +579,45 @@ export default function TodayTab({ onNavigateTab, pendingCount }: TodayTabProps)
               <button
                 onClick={() => setShowClearConfirm(true)}
                 disabled={actionLoading}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-rose-400 text-xs font-medium transition-colors cursor-pointer"
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-rose-400 text-xs font-medium transition-colors cursor-pointer shrink-0 whitespace-nowrap"
                 title="Clear all marks & reset this date to unmarked"
               >
-                <RotateCcw size={13} />
-                <span>Reset Day</span>
+                <RotateCcw size={12} />
+                <span>Reset</span>
               </button>
             )}
           </div>
         </div>
 
-        {/* ── Day Summary Progress Strip ─────────────────────────────────────── */}
+        {/* ── Day Summary Progress Badges Strip ──────────────────────────────── */}
         {totalClasses > 0 && (
-          <div className="pt-2 border-t border-white/[0.06] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-            <div className="flex items-center gap-3 flex-wrap">
-              <span className="text-[#8E8E93]">
-                {totalClasses} Classes Scheduled:
+          <div className="pt-2 border-t border-white/[0.06] flex items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none w-full sm:w-auto">
+              <span className="px-2 py-0.5 rounded-lg bg-white/5 text-[#8E8E93] text-[11px] font-medium shrink-0">
+                {totalClasses} Classes
               </span>
-              <span className="flex items-center gap-1 font-semibold text-emerald-400">
-                <CheckCircle2 size={13} /> {presentCount} Present
+              <span className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] font-bold shrink-0">
+                <CheckCircle2 size={12} /> {presentCount} Present
               </span>
-              <span className="flex items-center gap-1 font-semibold text-rose-400">
-                <XCircle size={13} /> {absentCount} Bunked
+              <span className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-400 text-[11px] font-bold shrink-0">
+                <XCircle size={12} /> {absentCount} Absent
               </span>
               {cancelledCount > 0 && (
-                <span className="flex items-center gap-1 font-semibold text-amber-400">
-                  <Ban size={13} /> {cancelledCount} Cancelled
+                <span className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[11px] font-bold shrink-0">
+                  <Ban size={12} /> {cancelledCount} Cancelled
                 </span>
               )}
               {pendingClasses > 0 && (
-                <span className="font-semibold text-white/60">
-                  • {pendingClasses} Pending
+                <span className="px-2 py-0.5 rounded-lg bg-white/5 text-white/60 text-[11px] font-medium shrink-0">
+                  {pendingClasses} Pending
                 </span>
               )}
             </div>
 
             {/* Keyboard shortcut hint badge */}
-            <div className="hidden lg:flex items-center gap-1 text-[10px] text-[#8E8E93] bg-white/[0.03] px-2.5 py-1 rounded-lg border border-white/5">
+            <div className="hidden lg:flex items-center gap-1 text-[10px] text-[#8E8E93] bg-white/[0.03] px-2.5 py-1 rounded-lg border border-white/5 shrink-0">
               <Keyboard size={12} className="text-white/60" />
-              <span>Shortcuts: Press <b>P</b> for Present, <b>B</b> for Bunk, <b>C</b> for Cancelled</span>
+              <span>Shortcuts: <b>P</b> Present, <b>B</b> Absent, <b>C</b> Cancelled</span>
             </div>
           </div>
         )}
@@ -544,7 +641,7 @@ export default function TodayTab({ onNavigateTab, pendingCount }: TodayTabProps)
               extra lecture, mark as holiday, or adjust your timetable.
             </p>
           </div>
-          <div className="flex items-center justify-center gap-3 pt-2">
+          <div className="flex flex-col items-stretch justify-center gap-2 pt-2 sm:flex-row sm:items-center sm:gap-3">
             <button
               onClick={() => setIsExtraModalOpen(true)}
               className="px-4 py-2 rounded-xl bg-[#0A84FF] hover:bg-[#0A84FF]/90 text-white text-xs font-bold cursor-pointer"
@@ -560,60 +657,48 @@ export default function TodayTab({ onNavigateTab, pendingCount }: TodayTabProps)
           </div>
         </div>
       ) : (
-        <div className="space-y-3.5">
+        <div role="table" aria-label={`Attendance for ${dayName}`} className="overflow-hidden rounded-2xl border border-white/10 bg-[#141414]">
+          <div
+            role="row"
+            className="hidden sm:grid sm:grid-cols-[minmax(145px,0.8fr)_minmax(220px,1.8fr)_minmax(155px,1fr)_auto] border-b border-white/10 bg-white/[0.035] text-[10px] font-bold uppercase tracking-wider text-white/45"
+          >
+            <span role="columnheader" className="px-4 py-2.5">Time</span>
+            <span role="columnheader" className="px-4 py-2.5">Class</span>
+            <span role="columnheader" className="px-4 py-2.5">Details</span>
+            <span role="columnheader" className="px-4 py-2.5 text-center">Attendance</span>
+          </div>
           {(() => {
             const getBlockInfo = (idx: number) => {
               if (!data?.sessions) return null;
               const curr = data.sessions[idx];
               if (!curr || !curr.subjectId) return null;
 
-              let start = idx;
-              while (
-                start > 0 &&
-                data.sessions[start - 1]?.subjectId === curr.subjectId &&
-                data.sessions[start - 1]?.slotType === curr.slotType
-              ) {
-                start--;
-              }
-
-              let end = idx;
-              while (
-                end < data.sessions.length - 1 &&
-                data.sessions[end + 1]?.subjectId === curr.subjectId &&
-                data.sessions[end + 1]?.slotType === curr.slotType
-              ) {
-                end++;
-              }
-
-              const span = end - start + 1;
-              if (span <= 1) return null;
-
+              const indices = getContiguousClassIndices(data.sessions, idx);
+              const start = indices[0];
+              const end = indices[indices.length - 1];
+              const span = indices.length;
               return {
                 start,
                 end,
                 span,
                 isFirst: idx === start,
-                positionInBlock: idx - start + 1,
-                indices: Array.from({ length: span }, (_, i) => start + i),
+                indices,
                 startTime: data.sessions[start].startTime,
                 endTime: data.sessions[end].endTime,
               };
             };
 
             return data?.sessions.map((session, index) => {
-              const isPresent = session.status === "present";
-              const isAbsent = session.status === "absent";
-              const isCancelled = session.status === "cancelled";
-              const subjColor = session.subject?.color || "#0A84FF";
               const blockInfo = getBlockInfo(index);
+              if (blockInfo && !blockInfo.isFirst) return null;
 
-              const sessionDurationHours = (() => {
-                if (!session.startTime || !session.endTime) return 1;
-                const [sh, sm] = session.startTime.split(":").map(Number);
-                const [eh, em] = session.endTime.split(":").map(Number);
-                const diff = (eh * 60 + (em || 0)) - (sh * 60 + (sm || 0));
-                return Math.max(1, Math.round(diff / 60));
-              })();
+              const blockIndices = blockInfo?.indices || [index];
+              const blockSessions = blockIndices.map((sessionIndex) => data!.sessions[sessionIndex]);
+              const isPresent = blockSessions.every((item) => item.status === "present");
+              const isAbsent = blockSessions.every((item) => item.status === "absent");
+              const isCancelled = blockSessions.every((item) => item.status === "cancelled");
+              const hasMixedStatus = new Set(blockSessions.map((item) => item.status)).size > 1;
+              const subjColor = session.subject?.color || "#0A84FF";
 
               const slotType = session.slotType || "lecture";
             const slotTypeConfig = {
@@ -641,169 +726,120 @@ export default function TodayTab({ onNavigateTab, pendingCount }: TodayTabProps)
             const SlotIcon = slotTypeConfig.icon;
 
             return (
-              <div key={session.slotId || session.entryId || index} className="space-y-2">
-                {blockInfo && blockInfo.isFirst && (
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-3 rounded-2xl bg-purple-950/20 border border-purple-500/30 text-xs">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="w-2.5 h-2.5 rounded-full bg-purple-400 shrink-0" />
-                      <span className="font-extrabold text-white">
-                        {blockInfo.span}-Hour {slotType === "lab" ? "Lab Practical" : "Class"} Block
-                      </span>
-                      <span className="text-purple-300/80 font-mono text-[11px]">
-                        ({blockInfo.startTime} – {blockInfo.endTime} · {blockInfo.span} Periods)
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-2 w-full sm:w-auto">
-                      <button
-                        type="button"
-                        onClick={() => handleMarkBlock(blockInfo.indices, "present")}
-                        className="flex-1 sm:flex-initial px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
-                        title={`Mark all ${blockInfo.span} periods Present in 1 click`}
-                      >
-                        <CheckCircle2 size={13} />
-                        <span>Mark All {blockInfo.span}h Present</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleMarkBlock(blockInfo.indices, "absent")}
-                        className="flex-1 sm:flex-initial px-3 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 text-[11px] font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
-                        title={`Mark all ${blockInfo.span} periods Bunked in 1 click`}
-                      >
-                        <XCircle size={13} />
-                        <span>Bunk All {blockInfo.span}h</span>
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                <div className="group relative p-4 sm:p-5 rounded-3xl bg-[#141414] hover:bg-[#181818] border border-white/[0.08] transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm">
-                  {/* Subject color accent bar */}
-                  <div
-                    className="absolute left-0 top-0 bottom-0 w-2 rounded-l-3xl"
-                    style={{ backgroundColor: subjColor }}
-                  />
-
-                  {/* Session Meta */}
-                  <div className="space-y-2 pl-2 flex-1">
-                    <div className="flex items-center gap-2.5 flex-wrap">
-                      <span
-                        className="w-3 h-3 rounded-full shrink-0"
-                        style={{ backgroundColor: subjColor }}
-                      />
-                      <h4 className="font-extrabold text-white text-base sm:text-lg tracking-tight">
-                        {session.subject?.name || "Free Slot"}
-                      </h4>
-                      {session.subject?.shortName && (
-                        <span className="text-[11px] font-mono font-bold text-white bg-white/10 px-2 py-0.5 rounded-lg border border-white/15">
-                          {session.subject.shortName}
-                        </span>
-                      )}
-                      {session.subject?.code && (
-                        <span className="text-[11px] font-mono text-[#8E8E93] bg-white/5 px-2 py-0.5 rounded-lg border border-white/5">
-                          {session.subject.code}
-                        </span>
-                      )}
-
-                      {/* Lecture vs Lab Chip */}
-                      <span
-                        className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border ${slotTypeConfig.badge}`}
-                      >
-                        <SlotIcon size={11} />
-                        {slotTypeConfig.label}
-                        {sessionDurationHours > 1 ? ` · ${sessionDurationHours} HRS` : ""}
-                      </span>
-
-                      {blockInfo && (
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-300 border border-purple-500/25">
-                          Period {blockInfo.positionInBlock} of {blockInfo.span}
-                        </span>
-                      )}
-
-                      {session.source === "extra" && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/25">
-                          EXTRA CLASS
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-4 text-xs text-[#8E8E93] flex-wrap">
-                      <span className="flex items-center gap-1 font-mono text-white/90">
-                        <Clock size={13} className="text-[#0A84FF]" />
-                        {session.startTime} – {session.endTime}
-                      </span>
-                      {session.room && (
-                        <span className="flex items-center gap-1">
-                          <MapPin size={13} className="text-white/60" />
-                          {session.room}
-                        </span>
-                      )}
-                      {session.subject?.teacher && (
-                        <span>Faculty: {session.subject.teacher}</span>
-                      )}
-                    </div>
-
-                    {/* "Can I Bunk?" Live Live Smart Indicator (FR-K2) */}
-                    {session.bunkBadge && (
-                      <div className="pt-0.5">
-                        <span
-                          className={`inline-flex items-center gap-1.5 text-xs px-3 py-1 rounded-xl border font-semibold ${
-                            session.bunkBadge.canBunk
-                              ? "bg-emerald-500/10 border-emerald-500/25 text-emerald-400"
-                              : "bg-rose-500/15 border-rose-500/30 text-rose-300 font-bold"
-                          }`}
-                        >
-                          <Sparkles size={13} />
-                          {session.bunkBadge.text}
-                        </span>
-                      </div>
+            <div
+              key={session.slotId || session.entryId || index}
+              role="row"
+              className="grid grid-cols-1 sm:grid-cols-[minmax(145px,0.8fr)_minmax(220px,1.8fr)_minmax(155px,1fr)_auto] sm:items-center border-b border-white/[0.07] last:border-b-0 hover:bg-white/[0.025] transition-colors"
+            >
+                  <div role="cell" className="px-4 pt-3 sm:py-4">
+                    <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-white/40 sm:hidden">Time</span>
+                    <span className="font-mono text-sm font-semibold text-white/90">
+                      {blockInfo?.startTime || session.startTime}–{blockInfo?.endTime || session.endTime}
+                    </span>
+                    {blockInfo && blockInfo.span > 1 && (
+                      <span className="ml-2 text-[10px] text-white/45">{blockInfo.span} periods</span>
                     )}
                   </div>
 
-                  {/* ── 1-Tap Tactile Marking Buttons ───────────────────────────── */}
-                  <div className="flex items-center gap-2 pl-2 md:pl-0 shrink-0 w-full md:w-auto">
+                  <div role="cell" className="flex min-w-0 items-start gap-2.5 px-4 py-2 sm:py-4">
+                    <span className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: subjColor }} />
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <h4 className="font-bold text-white text-sm sm:text-base tracking-tight">
+                          {session.subject?.name || "Free Slot"}
+                        </h4>
+                        {session.subject?.shortName && (
+                          <span className="rounded-md border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] font-mono text-white/75">
+                            {session.subject.shortName}
+                          </span>
+                        )}
+                        {session.subject?.code && (
+                          <span className="rounded-md border border-white/5 bg-white/[0.03] px-1.5 py-0.5 text-[10px] font-mono text-white/50">
+                            {session.subject.code}
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-white/50">
+                        <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-bold ${slotTypeConfig.badge}`}>
+                          <SlotIcon size={10} />
+                          {slotTypeConfig.label}
+                        </span>
+                        {session.source === "extra" && (
+                          <span className="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 font-bold text-emerald-400">
+                            EXTRA CLASS
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div role="cell" className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 pb-2 text-xs text-white/55 sm:py-4">
+                    <span className="mb-1 w-full text-[10px] font-semibold uppercase tracking-wide text-white/40 sm:hidden">Details</span>
+                    {session.room && (
+                      <span className="flex items-center gap-1">
+                        <MapPin size={12} className="text-white/45" />
+                        {session.room}
+                      </span>
+                    )}
+                    {session.subject?.teacher && <span>{session.subject.teacher}</span>}
+                  </div>
+
+                  <div role="cell" className="flex flex-col gap-1.5 px-4 pb-3 sm:flex-row sm:items-center sm:gap-1.5 sm:py-3 sm:pr-4">
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-white/40 sm:hidden">Mark attendance</span>
+                    <div className="grid w-full grid-cols-3 gap-1.5 sm:flex sm:w-auto sm:flex-1">
                     {/* Present Button */}
                     <button
-                      onClick={() => handleMark(index, "present")}
-                      className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+                      onClick={() => handleToggleBlockMark(blockIndices, "present", isPresent)}
+                      aria-pressed={isPresent}
+                      title={isPresent ? "Tap again to clear this mark" : "Mark present"}
+                      className={`flex min-w-0 items-center justify-center gap-1 px-1.5 py-2 rounded-xl text-[11px] font-bold transition-all cursor-pointer sm:flex-1 sm:px-3 sm:text-xs ${
                         isPresent
-                          ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/30 ring-2 ring-emerald-400 scale-[1.02]"
+                          ? "border border-emerald-400/50 bg-emerald-500 text-white"
+                          : hasMixedStatus
+                          ? "bg-amber-500/10 text-amber-200 border border-amber-500/30"
                           : "bg-white/5 hover:bg-emerald-500/15 text-white/70 hover:text-emerald-400 border border-white/5"
                       }`}
                     >
-                      <CheckCircle2 size={16} />
+                      <CheckCircle2 size={14} />
                       <span>Present</span>
                     </button>
 
-                    {/* Bunk / Absent Button */}
+                    {/* Absent Button */}
                     <button
-                      onClick={() => handleMark(index, "absent")}
-                      className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+                      onClick={() => handleToggleBlockMark(blockIndices, "absent", isAbsent)}
+                      aria-pressed={isAbsent}
+                      title={isAbsent ? "Tap again to clear this mark" : "Mark absent"}
+                      className={`flex min-w-0 items-center justify-center gap-1 px-1.5 py-2 rounded-xl text-[11px] font-bold transition-all cursor-pointer sm:flex-1 sm:px-3 sm:text-xs ${
                         isAbsent
-                          ? "bg-rose-500 text-white shadow-lg shadow-rose-500/30 ring-2 ring-rose-400 scale-[1.02]"
+                          ? "border border-rose-400/50 bg-rose-500 text-white"
+                          : hasMixedStatus
+                          ? "bg-amber-500/10 text-amber-200 border border-amber-500/30"
                           : "bg-white/5 hover:bg-rose-500/15 text-white/70 hover:text-rose-400 border border-white/5"
                       }`}
                     >
-                      <XCircle size={16} />
-                      <span>Bunk</span>
+                      <XCircle size={14} />
+                      <span>Absent</span>
                     </button>
 
                     {/* Cancelled Button */}
                     <button
-                      onClick={() => handleMark(index, "cancelled")}
-                      className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-2xl text-xs font-medium transition-all cursor-pointer ${
+                      onClick={() => handleToggleBlockMark(blockIndices, "cancelled", isCancelled)}
+                      aria-pressed={isCancelled}
+                      className={`flex min-w-0 items-center justify-center gap-1 px-1 py-2 rounded-xl text-[10px] font-medium transition-all cursor-pointer sm:flex-1 sm:px-2.5 sm:text-xs ${
                         isCancelled
-                          ? "bg-amber-500 text-white shadow-lg shadow-amber-500/30 ring-2 ring-amber-400 scale-[1.02]"
+                          ? "border border-amber-400/50 bg-amber-500 text-white"
+                          : hasMixedStatus
+                          ? "bg-amber-500/10 text-amber-200 border border-amber-500/30"
                           : "bg-white/5 hover:bg-amber-500/15 text-white/70 hover:text-amber-400 border border-white/5"
                       }`}
                       title="Class cancelled or holiday"
                     >
-                      <Ban size={15} />
+                      <Ban size={14} />
                       <span>Cancelled</span>
                     </button>
+                    </div>
                   </div>
                 </div>
-              </div>
             );
           });
         })()}
@@ -838,7 +874,7 @@ export default function TodayTab({ onNavigateTab, pendingCount }: TodayTabProps)
               <p className="text-[10px] text-white/30">Leave blank to use "Academic Holiday"</p>
             </div>
 
-            <div className="flex items-center gap-2.5 pt-1">
+            <div className="flex flex-col gap-2.5 pt-1 sm:flex-row">
               <button
                 onClick={() => setHolidayDialogOpen(false)}
                 className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/80 text-xs font-semibold cursor-pointer"
@@ -871,10 +907,10 @@ export default function TodayTab({ onNavigateTab, pendingCount }: TodayTabProps)
             </div>
 
             <p className="text-xs text-white/70 leading-relaxed">
-              This will remove all Present, Bunked, or Cancelled marks recorded for this date and restore scheduled classes to an unmarked state.
+              This will remove all Present, Absent, or Cancelled marks recorded for this date and restore scheduled classes to an unmarked state.
             </p>
 
-            <div className="flex items-center gap-2.5 pt-1">
+            <div className="flex flex-col gap-2.5 pt-1 sm:flex-row">
               <button
                 onClick={() => setShowClearConfirm(false)}
                 className="flex-1 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white/80 text-xs font-semibold cursor-pointer"

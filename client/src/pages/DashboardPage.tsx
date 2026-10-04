@@ -20,6 +20,7 @@ import {
   FastForward,
   Coffee,
   RotateCcw,
+  CalendarCheck,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useConfirm } from "../context/ConfirmContext";
@@ -29,6 +30,53 @@ import FocusRing from "../components/FocusRing";
 import EmptyState from "../components/EmptyState";
 import FocusPlayerModal from "../components/FocusPlayerModal";
 import type { PlanEntry, DashboardSummary, Subject } from "../types";
+import { attendanceApi } from "../lib/attendance-api";
+import { todayLocalCivil } from "../lib/civil-date";
+import type {
+  AttendanceSession,
+  AttendanceStatus,
+  DaySessionsResponse,
+} from "../types/attendance";
+
+function getAttendanceGroups(sessions: AttendanceSession[]) {
+  const groups: Array<{ key: string; sessions: AttendanceSession[]; indices: number[] }> = [];
+  let index = 0;
+
+  while (index < sessions.length) {
+    const first = sessions[index];
+    const indices = [index];
+    const canMerge = Boolean(first.subjectId && first.source !== "extra");
+    let end = index;
+
+    if (canMerge) {
+      while (end + 1 < sessions.length) {
+        const current = sessions[end];
+        const next = sessions[end + 1];
+        if (
+          !next.subjectId ||
+          next.source === "extra" ||
+          next.subjectId !== first.subjectId ||
+          (next.slotType || "lecture") !== (first.slotType || "lecture") ||
+          (next.room || "") !== (first.room || "") ||
+          current.endTime !== next.startTime
+        ) {
+          break;
+        }
+        end++;
+        indices.push(end);
+      }
+    }
+
+    groups.push({
+      key: `${first.subjectId || "free"}-${first.startTime}-${index}`,
+      sessions: sessions.slice(index, end + 1),
+      indices,
+    });
+    index = end + 1;
+  }
+
+  return groups;
+}
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -39,6 +87,10 @@ export default function DashboardPage() {
   const [generating, setGenerating] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [attendanceDay, setAttendanceDay] = useState<DaySessionsResponse | null>(null);
+  const [attendanceError, setAttendanceError] = useState("");
+  const [attendanceLoading, setAttendanceLoading] = useState(true);
+  const [updatingAttendance, setUpdatingAttendance] = useState<string | null>(null);
 
   // Focus Player Modal state
   const [focusModal, setFocusModal] = useState<{
@@ -72,6 +124,66 @@ export default function DashboardPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  const fetchAttendance = useCallback(async () => {
+    setAttendanceLoading(true);
+    setAttendanceError("");
+    try {
+      setAttendanceDay(await attendanceApi.getDaySessions(todayLocalCivil()));
+    } catch (err) {
+      console.error("Failed to load today's attendance", err);
+      setAttendanceError("Could not load today's class attendance.");
+    } finally {
+      setAttendanceLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchAttendance();
+  }, [fetchAttendance]);
+
+  const handleAttendanceMark = async (indices: number[], status: AttendanceStatus, key: string) => {
+    if (!attendanceDay) return;
+    const sessions = indices.map((index) => attendanceDay.sessions[index]);
+    const isAlreadySelected = sessions.every((session) => session.status === status);
+    setUpdatingAttendance(key);
+    setAttendanceDay({
+      ...attendanceDay,
+      sessions: attendanceDay.sessions.map((session, index) =>
+        indices.includes(index) ? { ...session, status: isAlreadySelected ? null : status } : session
+      ),
+    });
+
+    try {
+      if (isAlreadySelected) {
+        const entries = sessions.filter((session) => session.subjectId);
+        if (entries.some((session) => !session.entryId)) {
+          throw new Error("Saved attendance entry is missing its identifier.");
+        }
+        await Promise.all(entries.map((session) => attendanceApi.deleteEntry(session.entryId!)));
+      } else {
+        await Promise.all(
+          indices.map((index) => {
+            const session = attendanceDay.sessions[index];
+            if (!session.subjectId) return Promise.resolve();
+            return attendanceApi.markAttendance({
+              date: attendanceDay.date,
+              slotId: session.slotId,
+              subjectId: session.subjectId,
+              status,
+            });
+          })
+        );
+      }
+      await fetchAttendance();
+    } catch (err) {
+      console.error("Failed to update today's class attendance", err);
+      await fetchAttendance();
+      setAttendanceError("Attendance update failed. Please try again.");
+    } finally {
+      setUpdatingAttendance(null);
+    }
+  };
 
   const handleGeneratePlan = async () => {
     setGenerating(true);
@@ -249,6 +361,7 @@ export default function DashboardPage() {
   const todayDone = uniqueTodayList.filter((e) => e.status === "done").length;
   const todayTotal = uniqueTodayList.length;
   const todayPct = todayTotal > 0 ? Math.round((todayDone / todayTotal) * 100) : 0;
+  const overallPct = Math.max(0, Math.min(100, summary?.completionPct || 0));
 
   // Group subjects by Semester / Learning Track
   const groupedTracks = subjects.reduce<Record<string, Subject[]>>((acc, s) => {
@@ -277,47 +390,55 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="p-6 md:p-10 w-full pb-24 md:pb-12 text-white">
+    <div className="p-4 sm:p-6 md:p-10 w-full pb-24 md:pb-12 text-white">
       {/* ── Top Header Banner ─────────────────────────────────────────── */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-        <div>
-          <p className="text-xs font-mono text-ink-60 uppercase tracking-widest mb-1">
-            {dateStr}
-          </p>
-          <h1 className="font-display text-3xl md:text-4xl text-white font-semibold">
-            {greeting}, {user?.name?.split(" ")[0]} 👋
+      <div className="relative mb-6 overflow-hidden rounded-2xl border border-white/[0.07] bg-gradient-to-br from-white/[0.035] via-transparent to-[#0A84FF]/[0.045] p-4 sm:mb-8 sm:p-5">
+        <div className="pointer-events-none absolute -right-10 -top-14 h-36 w-36 rounded-full bg-[#0A84FF]/[0.07] blur-3xl" />
+        <div className="relative">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <p className="text-[10px] font-mono font-semibold uppercase tracking-[0.18em] text-ink-60 sm:text-xs">
+              {dateStr}
+            </p>
+            {summary && summary.streak > 0 && (
+              <span
+                className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-amber-500/20 bg-amber-500/[0.08] px-2.5 text-amber-300"
+                title={`${summary.streak} day study streak`}
+                aria-label={`${summary.streak} day study streak`}
+              >
+                <Flame size={14} className="text-amber-400" />
+                <span className="font-mono text-[11px] font-bold">{summary.streak}</span>
+                <span className="text-[10px] text-amber-200/70">day streak</span>
+              </span>
+            )}
+          </div>
+          <h1 className="font-display text-[27px] font-semibold leading-tight tracking-tight text-white sm:text-4xl">
+            {greeting}, {user?.name?.split(" ")[0]} <span className="whitespace-nowrap">👋</span>
           </h1>
-          <p className="text-xs font-body text-ink-60 mt-1">
+          <p className="mt-1.5 max-w-xl text-xs leading-relaxed text-ink-60 sm:text-sm">
             Ready to make progress on your semester syllabus &amp; tech courses today?
           </p>
         </div>
 
-        {/* Action Controls & Streak */}
-        <div className="flex items-center gap-3 shrink-0">
-          {summary && summary.streak > 0 && (
-            <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400">
-              <Flame size={16} className="text-amber-400 animate-pulse" />
-              <span className="font-mono text-sm font-semibold">{summary.streak}</span>
-              <span className="text-[11px] font-body text-amber-300/80">day streak</span>
-            </div>
-          )}
-
-          <button
-            onClick={() => window.dispatchEvent(new CustomEvent("open-studymate-tutorial"))}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 hover:text-white hover:bg-white/10 text-xs font-semibold transition-all group"
-            title="Open Interactive Tutorial & Product Tour"
-          >
-            <HelpCircle size={14} className="text-ink-60 group-hover:rotate-12 transition-transform" />
-            <span>Interactive Guide</span>
-          </button>
-
+        <div className="relative mt-4 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
           <button
             onClick={handleGeneratePlan}
             disabled={generating}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#0A84FF] text-white text-xs font-semibold hover:opacity-88 active:scale-95 transition-all disabled:opacity-40 cursor-pointer"
+            className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-sky-300/20 bg-gradient-to-b from-[#168cff] to-[#0876e8] px-3 py-2.5 text-[11px] font-semibold text-white shadow-[0_5px_18px_rgba(10,132,255,0.16)] transition-all hover:brightness-110 active:scale-[0.98] disabled:opacity-40 cursor-pointer sm:min-h-10 sm:px-4 sm:text-xs"
           >
-            <Zap size={14} />
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-white/15">
+              <Zap size={13} />
+            </span>
             <span>{generating ? "Recalculating Plan…" : "Generate AI Plan"}</span>
+          </button>
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent("open-studymate-tutorial"))}
+            className="group flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/[0.11] bg-white/[0.045] px-3 py-2.5 text-[11px] font-semibold text-slate-300 transition-all hover:border-white/20 hover:bg-white/[0.08] hover:text-white sm:min-h-10 sm:px-3.5 sm:text-xs"
+            title="Open Interactive Tutorial & Product Tour"
+          >
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.04]">
+              <HelpCircle size={13} className="text-ink-60 transition-transform group-hover:rotate-12" />
+            </span>
+            <span>Interactive Guide</span>
           </button>
         </div>
       </div>
@@ -328,48 +449,193 @@ export default function DashboardPage() {
         </div>
       )}
 
+      <section className="mb-6 rounded-2xl border border-white/[0.09] bg-[#141414] p-4 sm:p-5">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <CalendarCheck size={18} className="text-[#0A84FF]" />
+            <div>
+              <h2 className="text-base font-semibold text-white">Today’s Class Attendance</h2>
+            </div>
+          </div>
+          <Link
+            to="/attendance"
+            className="flex items-center gap-1 text-xs font-semibold text-[#0A84FF] hover:text-white"
+          >
+            Open tracker <ChevronRight size={14} />
+          </Link>
+        </div>
+
+        {attendanceLoading ? (
+          <div className="h-16 animate-pulse rounded-xl bg-white/[0.04]" />
+        ) : attendanceError ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-rose-500/20 bg-rose-500/[0.06] p-3 text-xs text-rose-200">
+            <span>{attendanceError}</span>
+            <button onClick={fetchAttendance} className="font-semibold text-white underline">Retry</button>
+          </div>
+        ) : !attendanceDay?.sessions.length ? (
+          <p className="rounded-xl bg-white/[0.025] px-3 py-4 text-center text-xs text-white/55">
+            No classes scheduled for today.
+          </p>
+        ) : (
+          <>
+            <div className="mb-3 flex flex-wrap gap-2 text-[10px] font-semibold">
+              {[
+                { label: "Present", count: attendanceDay.sessions.filter((session) => session.status === "present").length, color: "text-emerald-300 bg-emerald-500/10" },
+                { label: "Absent", count: attendanceDay.sessions.filter((session) => session.status === "absent").length, color: "text-rose-300 bg-rose-500/10" },
+                { label: "Pending", count: attendanceDay.sessions.filter((session) => session.status === null).length, color: "text-amber-200 bg-amber-500/10" },
+              ].map((item) => (
+                <span key={item.label} className={`rounded-full px-2.5 py-1 ${item.color}`}>
+                  {item.count} {item.label}
+                </span>
+              ))}
+            </div>
+
+            <div className="space-y-2">
+              {getAttendanceGroups(attendanceDay.sessions).map((group) => {
+                const first = group.sessions[0];
+                const status = group.sessions.every((session) => session.status === first.status)
+                  ? first.status
+                  : null;
+                const subjectName = first.subject?.name || "Extra class";
+                const busy = updatingAttendance === group.key;
+
+                return (
+                  <div key={group.key} className="flex flex-col gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex min-w-0 items-start gap-2.5">
+                      <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: first.subject?.color || "#0A84FF" }} />
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-white">{subjectName}</p>
+                        <p className="mt-0.5 text-[11px] text-white/45">
+                          {first.startTime}–{group.sessions[group.sessions.length - 1].endTime}
+                          {first.subject?.shortName ? ` · ${first.subject.shortName}` : ""}
+                          {group.sessions.length > 1 ? ` · ${group.sessions.length} periods` : ""}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1.5 sm:flex sm:shrink-0">
+                      {([
+                        ["present", "Present", "border-emerald-500/40 bg-emerald-500/20 text-emerald-200"],
+                        ["absent", "Absent", "border-rose-500/40 bg-rose-500/20 text-rose-200"],
+                        ["cancelled", "Cancelled", "border-amber-500/40 bg-amber-500/20 text-amber-200"],
+                      ] as const).map(([value, label, selectedClass]) => (
+                        <button
+                          key={value}
+                          disabled={busy || !first.subjectId}
+                          onClick={() => handleAttendanceMark(group.indices, value, group.key)}
+                          aria-pressed={status === value}
+                          title={status === value ? "Tap again to clear this mark" : `Mark ${label.toLowerCase()}`}
+                          className={`rounded-lg border px-2.5 py-2 text-[10px] font-semibold transition-colors disabled:opacity-40 sm:py-1.5 ${
+                            status === value
+                              ? selectedClass
+                              : "border-white/[0.07] bg-white/[0.03] text-white/55 hover:text-white"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </section>
+
       {/* ── 12-Column Responsive Dashboard Layout ──────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 w-full">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-8 w-full">
         {/* ── Left Column (8 cols): Today's Learning Agenda & Curriculum ── */}
         <div className="lg:col-span-8 space-y-8">
           {/* Quick Metrics Bar */}
-          <div className="grid grid-cols-3 gap-3">
-            {[
-              {
-                label: "Overall Progress",
-                value: `${summary?.completionPct || 0}%`,
-                desc: `${summary?.completedTopics || 0}/${summary?.totalTopics || 0} topics mastered`,
-                color: "text-emerald-400",
-                bg: "bg-emerald-500/10 border-emerald-500/20",
-              },
-              {
-                label: "Today's Agenda",
-                value: `${todayDone}/${todayTotal}`,
-                desc: todayTotal > 0 ? `${todayPct}% done` : "0 tasks scheduled",
-                color: "text-white",
-                bg: "bg-white/5 border-white/10",
-              },
-              {
-                label: "Active Courses",
-                value: subjects.length,
-                desc: `${Object.keys(groupedTracks).length} learning tracks`,
-                color: "text-amber-400",
-                bg: "bg-amber-500/10 border-amber-500/20",
-              },
-            ].map(({ label, value, desc, color }) => (
-              <div
-                key={label}
-                className="bg-[#141414] border border-white/[0.09] rounded-2xl p-4 transition-colors"
-              >
-                <p className="text-[10px] font-mono text-ink-60 uppercase tracking-widest">
-                  {label}
-                </p>
-                <p className={`font-mono text-2xl font-bold my-0.5 ${color}`}>
-                  {value}
-                </p>
-                <p className="text-[11px] font-body text-ink-60 truncate">{desc}</p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="relative overflow-hidden rounded-2xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/[0.09] to-[#141414] p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-mono uppercase tracking-widest text-ink-60">
+                    Overall Progress
+                  </p>
+                  <p className="mt-2 text-xs font-semibold text-white">
+                    {summary?.completedTopics || 0} of {summary?.totalTopics || 0}
+                  </p>
+                  <p className="text-[11px] text-ink-60">topics mastered</p>
+                </div>
+                <div className="relative h-[68px] w-[68px] shrink-0">
+                  <svg className="h-full w-full -rotate-90" viewBox="0 0 48 48" aria-hidden="true">
+                    <circle cx="24" cy="24" r="19" fill="none" stroke="currentColor" strokeWidth="4" className="text-white/[0.08]" />
+                    <circle
+                      cx="24"
+                      cy="24"
+                      r="19"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                      strokeLinecap="round"
+                      strokeDasharray={`${(overallPct / 100) * 119.38} 119.38`}
+                      className="text-emerald-400 transition-[stroke-dasharray] duration-1000 ease-out motion-reduce:transition-none"
+                    />
+                  </svg>
+                  <span className="absolute inset-0 flex items-center justify-center font-mono text-sm font-bold text-emerald-300">
+                    {overallPct}%
+                  </span>
+                </div>
               </div>
-            ))}
+            </div>
+
+            <div className="rounded-2xl border border-[#0A84FF]/20 bg-gradient-to-br from-[#0A84FF]/[0.09] to-[#141414] p-4">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-[10px] font-mono uppercase tracking-widest text-ink-60">
+                    Today’s Agenda
+                  </p>
+                  <p className="mt-2 font-mono text-2xl font-bold text-white">
+                    {todayDone}<span className="text-base text-white/40">/{todayTotal}</span>
+                  </p>
+                </div>
+                <span className="rounded-full bg-[#0A84FF]/15 px-2 py-1 text-[10px] font-semibold text-sky-200">
+                  {todayPct}% done
+                </span>
+              </div>
+              <div
+                className="mt-3 h-2 overflow-hidden rounded-full bg-white/[0.08]"
+                role="progressbar"
+                aria-label="Today's study agenda progress"
+                aria-valuenow={todayPct}
+                aria-valuemin={0}
+                aria-valuemax={100}
+              >
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-sky-500 to-cyan-300 transition-[width] duration-700 ease-out motion-reduce:transition-none"
+                  style={{ width: `${todayPct}%` }}
+                />
+              </div>
+              <p className="mt-2 text-[11px] text-ink-60">
+                {todayTotal > 0 ? `${todayTotal - todayDone} topics left today` : "No tasks scheduled"}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-amber-500/20 bg-gradient-to-br from-amber-500/[0.08] to-[#141414] p-4">
+              <p className="text-[10px] font-mono uppercase tracking-widest text-ink-60">
+                Active Courses
+              </p>
+              <div className="mt-2 flex items-end justify-between gap-2">
+                <p className="font-mono text-3xl font-bold leading-none text-amber-300">
+                  {subjects.length}
+                </p>
+                <BookOpen size={20} className="text-amber-300/60" />
+              </div>
+              <p className="mt-2 text-[11px] text-ink-60">
+                {Object.keys(groupedTracks).length} learning tracks
+              </p>
+              <div className="mt-3 flex gap-1.5" aria-hidden="true">
+                {subjects.slice(0, 8).map((subject) => (
+                  <span
+                    key={subject._id}
+                    className="h-1.5 min-w-1.5 flex-1 rounded-full"
+                    style={{ backgroundColor: subject.colorTag }}
+                  />
+                ))}
+              </div>
+            </div>
           </div>
 
           {/* Today's Tasks Section */}
@@ -809,4 +1075,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-

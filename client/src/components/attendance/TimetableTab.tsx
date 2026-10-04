@@ -138,9 +138,11 @@ function getDayBlocks(
 function TimeInput({
   value,
   onChange,
+  editable = true,
 }: {
   value: string;
   onChange: (v: string) => void;
+  editable?: boolean;
 }) {
   const ref = useRef<HTMLInputElement>(null);
 
@@ -149,6 +151,10 @@ function TimeInput({
     const [h, m] = value.split(":");
     return `${String(h || "0").padStart(2, "0")}:${String(m || "0").padStart(2, "0")}`;
   })();
+
+  if (!editable) {
+    return <span className="text-white/75 text-[10px] font-mono font-semibold">{display}</span>;
+  }
 
   return (
     <span
@@ -192,13 +198,10 @@ export default function TimetableTab() {
     }
     return "grid";
   });
-  const [activeDayFilter, setActiveDayFilter] = useState<number | "all">(() => {
-    if (typeof window !== "undefined" && window.innerWidth < 768) {
-      const today = new Date().getDay();
-      return today === 0 ? 1 : today;
-    }
-    return "all";
-  });
+  const [isMobileViewport, setIsMobileViewport] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches
+  );
+  const [activeDayFilter, setActiveDayFilter] = useState<number | "all">("all");
   const [applyFrom, setApplyFrom] = useState<string>(getTodayStr());
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState<string>("all");
   const [isEditMode, setIsEditMode] = useState<boolean>(false);
@@ -208,6 +211,18 @@ export default function TimetableTab() {
   const [isClearing, setIsClearing] = useState(false);
   const [isParserModalOpen, setIsParserModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 767px)");
+    const syncViewport = (event: MediaQueryListEvent | MediaQueryList) => {
+      setIsMobileViewport(event.matches);
+      if (event.matches) setActiveDayFilter("all");
+    };
+
+    syncViewport(mediaQuery);
+    mediaQuery.addEventListener("change", syncViewport);
+    return () => mediaQuery.removeEventListener("change", syncViewport);
+  }, []);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -593,64 +608,106 @@ export default function TimetableTab() {
     activeDayFilter === "all"
       ? WEEKDAYS
       : WEEKDAYS.filter((w) => w.day === activeDayFilter);
+  const effectiveLayoutMode = isMobileViewport ? "vertical" : layoutMode;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {toastMessage && (
-        <div className="fixed bottom-6 right-6 z-50 bg-[#1C1C1E] border border-white/15 text-white px-4 py-2.5 rounded-xl shadow-2xl flex items-center gap-2 text-sm animate-in fade-in duration-200">
+        <div className="fixed inset-x-4 bottom-4 z-50 flex max-w-[calc(100vw-2rem)] items-center gap-2 rounded-xl border border-white/15 bg-[#1C1C1E] px-4 py-2.5 text-sm text-white shadow-2xl animate-in fade-in duration-200 sm:inset-x-auto sm:bottom-6 sm:right-6">
           <Sparkles size={16} className="text-[#0A84FF]" />
           <span>{toastMessage}</span>
         </div>
       )}
 
       {/* ── Toolbar Header ─────────────────────────────────────────────────── */}
-      <div className="p-4 sm:p-5 rounded-3xl bg-[#141414] border border-white/[0.08] space-y-4 shadow-xl">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <CalendarDays size={20} className="text-[#0A84FF]" />
-              <h3 className="font-extrabold text-white text-base sm:text-lg tracking-tight">
-                Weekly Timetable Matrix
-              </h3>
+      <div className="p-4 sm:p-5 rounded-2xl bg-[#141414] border border-white/[0.08] space-y-3 shadow-xl">
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <CalendarDays size={20} className="text-[#0A84FF]" />
+                <h3 className="font-extrabold text-white text-base sm:text-lg tracking-tight">
+                  Weekly Timetable
+                </h3>
+              </div>
+              <p className="text-xs text-[#8E8E93]">Your weekly class schedule</p>
             </div>
-            <p className="text-xs text-[#8E8E93]">
-              Universal weekly timetable. Multi-hour labs (4h) and classes automatically combine into continuous visual cards.
-            </p>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Timetable Scanner */}
+              <button
+                onClick={() => setIsParserModalOpen(true)}
+                className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/30 text-purple-300 text-xs font-bold transition-all cursor-pointer"
+                title="Import timetable from a photo or PDF"
+              >
+                <UploadCloud size={14} />
+                <span>Import Timetable</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsEditMode(!isEditMode)}
+                className={`flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  isEditMode
+                    ? "bg-amber-500 hover:bg-amber-400 text-black"
+                    : "bg-white/10 hover:bg-white/15 text-white border border-white/10"
+                }`}
+                title={isEditMode ? "Finish editing" : "Edit timetable"}
+              >
+                <Edit2 size={13} />
+                <span>{isEditMode ? "Done Editing" : "Edit Timetable"}</span>
+              </button>
+
+              {isEditMode && (
+                <button
+                  onClick={handleSave}
+                  disabled={isSaving}
+                  className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-[#0A84FF] hover:bg-[#0A84FF]/90 text-white text-xs font-bold transition-all shadow-lg shadow-[#0A84FF]/25 disabled:opacity-50 cursor-pointer"
+                >
+                  <Save size={15} />
+                  <span>{isSaving ? "Saving..." : "Save Changes"}</span>
+                </button>
+              )}
+            </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap w-full lg:w-auto">
+          <div className="flex items-center gap-2 flex-wrap">
             {/* View Mode Toggle: Multi-Hour Blocks vs Single Slots */}
-            <div className="flex items-center bg-white/5 border border-white/10 p-0.5 rounded-xl text-xs w-full sm:w-auto justify-between sm:justify-start">
-              <button
-                type="button"
-                onClick={() => setIsMergedView(true)}
-                className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
-                  isMergedView
-                    ? "bg-[#0A84FF] text-white shadow-sm"
-                    : "text-white/60 hover:text-white"
-                }`}
-                title="Combine consecutive hours of the same lab or class into one big block"
-              >
-                <LayoutGrid size={13} />
-                <span>Combined Blocks</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsMergedView(false)}
-                className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
-                  !isMergedView
-                    ? "bg-[#0A84FF] text-white shadow-sm"
-                    : "text-white/60 hover:text-white"
-                }`}
-                title="View each individual 1-hour period box"
-              >
-                <Columns size={13} />
-                <span>Single 1-Hr Slots</span>
-              </button>
-            </div>
+            {isEditMode && (
+              <div className="flex items-center bg-white/5 border border-white/10 p-0.5 rounded-xl text-[11px] sm:text-xs">
+                <button
+                  type="button"
+                  onClick={() => setIsMergedView(true)}
+                  className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
+                    isMergedView
+                      ? "bg-[#0A84FF] text-white shadow-sm"
+                      : "text-white/60 hover:text-white"
+                  }`}
+                  title="Combine consecutive hours of the same lab or class into one big block"
+                >
+                  <LayoutGrid size={13} />
+                  <span className="hidden sm:inline">Combined Blocks</span>
+                  <span className="sm:hidden">Combined</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsMergedView(false)}
+                  className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
+                    !isMergedView
+                      ? "bg-[#0A84FF] text-white shadow-sm"
+                      : "text-white/60 hover:text-white"
+                  }`}
+                  title="View each individual 1-hour period box"
+                >
+                  <Columns size={13} />
+                  <span className="hidden sm:inline">Single 1-Hr Slots</span>
+                  <span className="sm:hidden">Single Slots</span>
+                </button>
+              </div>
+            )}
 
             {/* Layout Toggle: Vertical Cards vs Matrix Grid */}
-            <div className="flex items-center bg-white/5 border border-white/10 p-0.5 rounded-xl text-xs w-full sm:w-auto justify-between sm:justify-start">
+            <div className="hidden md:flex items-center bg-white/5 border border-white/10 p-0.5 rounded-xl text-xs">
               <button
                 type="button"
                 onClick={() => setLayoutMode("vertical")}
@@ -675,12 +732,12 @@ export default function TimetableTab() {
                 title="Horizontal full matrix grid (ideal for desktop)"
               >
                 <Table size={13} />
-                <span>Matrix Grid</span>
+                <span>Weekly Table</span>
               </button>
             </div>
 
             {/* Filter by subject */}
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs flex-1 sm:flex-initial min-w-[130px]">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs w-full sm:w-auto sm:flex-1 sm:max-w-[240px]">
               <Filter size={13} className="text-[#8E8E93] shrink-0" />
               <select
                 value={selectedSubjectFilter}
@@ -699,97 +756,40 @@ export default function TimetableTab() {
             </div>
 
             {/* Apply From Date Picker */}
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs flex-1 sm:flex-initial min-w-[150px]">
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs w-full sm:w-auto sm:flex-initial">
               <Calendar size={13} className="text-[#0A84FF] shrink-0" />
               <span className="text-white/70 shrink-0">From:</span>
               <input
                 type="date"
                 value={applyFrom}
                 onChange={(e) => e.target.value && setApplyFrom(e.target.value)}
-                className="bg-transparent text-white font-mono focus:outline-none cursor-pointer w-full text-xs"
+                className="bg-transparent text-white font-mono focus:outline-none cursor-pointer text-xs flex-1 min-w-0"
               />
             </div>
 
-            {/* Timetable Scanner */}
-            <button
-              onClick={() => setIsParserModalOpen(true)}
-              className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/30 text-purple-300 text-xs font-bold transition-all cursor-pointer flex-1 sm:flex-initial"
-              title="Scan PDF or image of routine to auto-populate timetable and subjects"
-            >
-              <UploadCloud size={14} />
-              <span>Scan Routine</span>
-            </button>
-
-            {/* Edit Mode Toggle Button */}
-            <button
-              type="button"
-              onClick={() => setIsEditMode(!isEditMode)}
-              className={`flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex-1 sm:flex-initial ${
-                isEditMode
-                  ? "bg-amber-500 hover:bg-amber-400 text-black shadow-lg shadow-amber-500/25"
-                  : "bg-white/10 hover:bg-white/15 text-white border border-white/10"
-              }`}
-              title={isEditMode ? "Exit editing mode" : "Edit slots, rooms and duration"}
-            >
-              <Edit2 size={13} />
-              <span>{isEditMode ? "Done Editing" : "Edit Timetable"}</span>
-            </button>
-
-            {/* Clear Routine Button */}
-            {slots.length > 0 && (
-              <button
-                onClick={() => setShowClearAllConfirm(true)}
-                className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 text-xs font-bold transition-all cursor-pointer flex-1 sm:flex-initial"
-                title="Clear and reset weekly timetable"
-              >
-                <Trash2 size={14} />
-                <span>Clear Routine</span>
-              </button>
-            )}
-
-            {/* Save Timetable */}
-            <button
-              onClick={handleSave}
-              disabled={isSaving}
-              className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-[#0A84FF] hover:bg-[#0A84FF]/90 text-white text-xs font-bold transition-all shadow-lg shadow-[#0A84FF]/25 disabled:opacity-50 cursor-pointer w-full sm:w-auto"
-            >
-              <Save size={15} />
-              <span>{isSaving ? "Saving..." : "Save Timetable"}</span>
-            </button>
           </div>
         </div>
 
         {/* Edit Mode Active Banner */}
         {isEditMode && (
-          <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/25 text-amber-300 text-xs flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Edit2 size={14} className="shrink-0 text-amber-400" />
-              <span>
-                <strong>Editing Mode Active:</strong> Assign subjects, switch between lecture/lab, customize room numbers, or change period duration (1h–4h). Click <strong>"Save Timetable"</strong> or <strong>"Done Editing"</strong> when finished.
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setIsEditMode(false)}
-              className="px-3 py-1 rounded-lg bg-amber-500 text-black font-bold text-[11px] hover:bg-amber-400 transition-colors shrink-0 cursor-pointer"
-            >
-              Done Editing
-            </button>
+          <div className="px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-200 text-xs flex items-center gap-2">
+            <Edit2 size={13} className="shrink-0 text-amber-400" />
+            <span>Editing timetable · update classes, times, rooms and durations, then save.</span>
           </div>
         )}
 
         {/* Quick Actions & Day Filter Bar */}
-        <div className="pt-2 border-t border-white/[0.06] flex items-center justify-between gap-3 flex-wrap text-xs">
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* Day Filter Pills */}
-            <div className="flex items-center bg-white/5 p-1 rounded-2xl border border-white/10 overflow-x-auto max-w-full scrollbar-none gap-1 shrink-0">
+        <div className="pt-2 border-t border-white/[0.06] flex flex-col gap-3 text-xs">
+          <div className="flex flex-col lg:flex-row lg:items-center gap-2">
+            {/* Day Filter Pills - Clean 1-row scroll on mobile, no multi-row wrap */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none w-full sm:w-auto">
               <button
                 type="button"
                 onClick={() => setActiveDayFilter("all")}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                className={`rounded-xl px-3 py-2 text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                   activeDayFilter === "all"
                     ? "bg-[#0A84FF] text-white shadow-md shadow-[#0A84FF]/25"
-                    : "text-white/60 hover:text-white"
+                    : "text-white/60 hover:text-white bg-white/5 border border-white/5"
                 }`}
               >
                 All Week ({slots.filter((s) => s.subjectId).length})
@@ -801,10 +801,10 @@ export default function TimetableTab() {
                     key={wd.day}
                     type="button"
                     onClick={() => setActiveDayFilter(wd.day)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+                    className={`flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                       activeDayFilter === wd.day
                         ? "bg-[#0A84FF] text-white shadow-md shadow-[#0A84FF]/25"
-                        : "text-white/60 hover:text-white"
+                        : "text-white/60 hover:text-white bg-white/5 border border-white/5"
                     }`}
                   >
                     <span>{wd.short}</span>
@@ -822,25 +822,30 @@ export default function TimetableTab() {
 
             <div className="h-4 w-[1px] bg-white/10 mx-1 hidden sm:block" />
 
-            <button
-              onClick={handleCopyMonday}
-              className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/5 text-white/80 hover:text-white transition-colors cursor-pointer"
-              title="Copy Monday's schedule to Tuesday through Friday"
-            >
-              <Copy size={13} className="text-[#0A84FF]" />
-              <span>Copy Mon to Tue–Fri</span>
-            </button>
+            {isEditMode && (
+              <>
+                <button
+                  onClick={handleCopyMonday}
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/5 text-white/80 hover:text-white transition-colors cursor-pointer"
+                  title="Copy Monday's schedule to Tuesday through Friday"
+                >
+                  <Copy size={13} className="text-[#0A84FF]" />
+                  <span className="hidden sm:inline">Copy Mon to Tue–Fri</span>
+                  <span className="sm:hidden">Copy week</span>
+                </button>
 
-            <button
-              onClick={handleApplyStandardTimings}
-              className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/5 text-white/80 hover:text-white transition-colors cursor-pointer"
-              title="Reset slot timings to standard 9 AM - 5 PM periods"
-            >
-              <Clock size={13} className="text-amber-400" />
-              <span>Reset 9 AM – 5 PM</span>
-            </button>
+                <button
+                  onClick={handleApplyStandardTimings}
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/5 text-white/80 hover:text-white transition-colors cursor-pointer"
+                  title="Reset slot timings to standard 9 AM - 5 PM periods"
+                >
+                  <Clock size={13} className="text-amber-400" />
+                  <span>Reset timings</span>
+                </button>
+              </>
+            )}
 
-            {slots.length > 0 && (
+            {isEditMode && slots.length > 0 && (
               <button
                 onClick={() => setShowClearAllConfirm(true)}
                 className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/25 text-rose-300 transition-colors cursor-pointer"
@@ -853,23 +858,25 @@ export default function TimetableTab() {
           </div>
 
           {/* Periods per Day Selector */}
-          <div className="flex items-center gap-1.5">
-            <span className="text-[#8E8E93] text-xs">Periods:</span>
-            {[6, 7, 8, 9, 10].map((num) => (
-              <button
-                key={num}
-                type="button"
-                onClick={() => setMaxSlots(num)}
-                className={`px-2 py-0.5 rounded text-[11px] font-mono font-bold transition-all cursor-pointer ${
-                  maxSlots === num
-                    ? "bg-[#0A84FF] text-white shadow-sm"
-                    : "bg-white/5 hover:bg-white/10 text-white/70 hover:text-white border border-white/5"
-                }`}
-              >
-                {num}
-              </button>
-            ))}
-          </div>
+          {isEditMode && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-[#8E8E93] text-xs">Periods:</span>
+              {[6, 7, 8, 9, 10].map((num) => (
+                <button
+                  key={num}
+                  type="button"
+                  onClick={() => setMaxSlots(num)}
+                  className={`px-2 py-0.5 rounded text-[11px] font-mono font-bold transition-all cursor-pointer ${
+                    maxSlots === num
+                      ? "bg-[#0A84FF] text-white shadow-sm"
+                      : "bg-white/5 hover:bg-white/10 text-white/70 hover:text-white border border-white/5"
+                  }`}
+                >
+                  {num}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -879,17 +886,17 @@ export default function TimetableTab() {
           <div className="w-8 h-8 border-2 border-[#0A84FF] border-t-transparent rounded-full animate-spin" />
           <p className="text-xs text-[#8E8E93]">Loading weekly timetable...</p>
         </div>
-      ) : layoutMode === "vertical" ? (
-        /* ── Mobile / Vertical Stacked Cards View ────────────────────────────── */
+      ) : effectiveLayoutMode === "vertical" ? (
+        /* ── Mobile / Vertical Stacked Schedule View ────────────────────────── */
         <div className="space-y-4">
           {/* Helpful notice for mobile layout */}
-          <div className="flex sm:hidden items-center justify-between px-3.5 py-2 rounded-2xl bg-white/[0.03] border border-white/5 text-[11px] text-[#8E8E93]">
+          <div className="flex md:hidden items-center justify-between px-3 py-2 rounded-xl bg-white/[0.03] border border-white/5 text-[11px] text-[#8E8E93]">
             <span className="flex items-center gap-1.5 font-medium text-white/70">
               <Rows3 size={13} className="text-[#0A84FF] shrink-0" />
-              <span>Vertical Schedule &bull; Tap day above to switch</span>
+              <span>Weekly schedule · scroll down to see every day</span>
             </span>
             <span className="text-[10px] font-mono text-[#0A84FF] bg-[#0A84FF]/10 px-2 py-0.5 rounded-full border border-[#0A84FF]/20 font-bold shrink-0">
-              {visibleWeekdays.length === 1 ? visibleWeekdays[0].name : "All Days"}
+              {visibleWeekdays.length === 1 ? visibleWeekdays[0].name : "All Week"}
             </span>
           </div>
 
@@ -904,8 +911,8 @@ export default function TimetableTab() {
                 className="p-4 rounded-3xl bg-[#121212] border border-white/[0.08] shadow-xl space-y-3.5"
               >
                 {/* Day Header */}
-                <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
-                  <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.06] pb-3">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
                     <span className="font-extrabold text-white text-base tracking-tight">
                       {wd.name}
                     </span>
@@ -919,7 +926,7 @@ export default function TimetableTab() {
                     )}
                   </div>
 
-                  <button
+                  {isEditMode && <button
                     type="button"
                     onClick={() => handleClearDay(wd.day)}
                     className="flex items-center gap-1 text-[11px] text-[#8E8E93] hover:text-rose-400 transition-colors cursor-pointer"
@@ -927,7 +934,7 @@ export default function TimetableTab() {
                   >
                     <Trash2 size={12} />
                     <span>Clear Day</span>
-                  </button>
+                  </button>}
                 </div>
 
                 {/* Vertical Stack of Period Cards */}
@@ -999,6 +1006,7 @@ export default function TimetableTab() {
                                 onChange={(v) =>
                                   updateSlot(wd.day, block.startSlotIndex, { startTime: v })
                                 }
+                                editable={isEditMode}
                               />
                               <span className="text-white/30">–</span>
                               <TimeInput
@@ -1006,11 +1014,12 @@ export default function TimetableTab() {
                                 onChange={(v) =>
                                   updateSlot(wd.day, block.endSlotIndex, { endTime: v })
                                 }
+                                editable={isEditMode}
                               />
                             </div>
                           </div>
 
-                          {(block.subjectId || isMultiHour) && (
+                          {isEditMode && (block.subjectId || isMultiHour) && (
                             <button
                               type="button"
                               onClick={() => clearBlock(wd.day, block)}
@@ -1033,7 +1042,7 @@ export default function TimetableTab() {
                                       style={{ backgroundColor: selectedSubj.color }}
                                     />
                                   )}
-                                  <h4 className="font-extrabold text-white text-base tracking-tight truncate">
+                                  <h4 className="font-extrabold text-white text-base tracking-tight leading-snug break-words">
                                     {selectedSubj
                                       ? selectedSubj.name
                                       : isMultiHour
@@ -1066,7 +1075,7 @@ export default function TimetableTab() {
                                     </span>
                                   )}
                                   {!selectedSubj && (
-                                    <span className="text-white/40 italic">Free slot (Tap Edit Timetable to assign)</span>
+                                    <span className="text-white/40 italic">Free period</span>
                                   )}
                                 </div>
                               </div>
@@ -1085,14 +1094,6 @@ export default function TimetableTab() {
                                   <span>{isLab ? "Lab Practical" : isTutorial ? "Tutorial" : "Lecture"}</span>
                                 </span>
 
-                                <button
-                                  type="button"
-                                  onClick={() => setIsEditMode(true)}
-                                  className="p-1 rounded-lg text-white/40 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
-                                  title="Edit schedule"
-                                >
-                                  <Edit2 size={13} />
-                                </button>
                               </div>
                             </div>
                           </div>
@@ -1272,86 +1273,75 @@ export default function TimetableTab() {
             </span>
           </div>
 
-          <div className="w-full overflow-x-auto rounded-3xl border border-white/[0.08] bg-[#121212] shadow-xl scrollbar-thin">
-          <div
-            className="p-4 sm:p-5 space-y-3.5"
-            style={{ minWidth: `${Math.max(1040, maxSlots * 140)}px` }}
+          <div className="w-full overflow-x-auto rounded-2xl border border-white/[0.08] bg-[#121212] shadow-xl scrollbar-thin">
+          <table
+            className="w-full border-collapse text-left"
+            style={{ minWidth: `${Math.max(1120, 150 + maxSlots * 132)}px` }}
           >
-            {/* Bell Timings Header Strip */}
-            <div
-              className="grid gap-2.5 px-3 py-2.5 rounded-2xl bg-white/[0.02] border border-white/[0.05] text-[11px] font-mono text-[#8E8E93]"
-              style={{
-                gridTemplateColumns: `repeat(${maxSlots}, minmax(0, 1fr))`,
-              }}
-            >
-              {Array.from({ length: maxSlots }).map((_, i) => {
-                const timing = getPeriodTiming(i);
-                return (
-                  <div
-                    key={i}
-                    className="text-center py-1.5 px-1 rounded-xl bg-white/[0.02] border border-white/[0.04]"
-                  >
-                    <span className="text-white/80 font-bold block text-xs">Period {i + 1}</span>
-                    <div className="flex items-center justify-center gap-1 text-[10px] text-white/50 font-mono mt-0.5">
-                      <TimeInput
-                        value={timing.start}
-                        onChange={(v) => updatePeriodTiming(i, v, timing.end)}
-                      />
-                      <span className="text-white/20">–</span>
-                      <TimeInput
-                        value={timing.end}
-                        onChange={(v) => updatePeriodTiming(i, timing.start, v)}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Weekday Rows */}
+            <thead>
+              <tr className="bg-white/[0.035]">
+                <th scope="col" className="sticky left-0 z-10 w-[150px] border-b border-r border-white/10 bg-[#181818] px-3 py-3 text-xs font-bold uppercase tracking-wide text-white/60">
+                  Day
+                </th>
+                {Array.from({ length: maxSlots }).map((_, i) => {
+                  const timing = getPeriodTiming(i);
+                  return (
+                    <th
+                      key={i}
+                      scope="col"
+                      className="min-w-[132px] border-b border-r border-white/10 px-2 py-2 text-center last:border-r-0"
+                    >
+                      <span className="block text-xs font-bold text-white">Period {i + 1}</span>
+                      <span className="mt-1 flex items-center justify-center gap-1 text-[10px] font-mono text-white/55">
+                        <TimeInput
+                          value={timing.start}
+                          onChange={(v) => updatePeriodTiming(i, v, timing.end)}
+                          editable={isEditMode}
+                        />
+                        <span className="text-white/25">–</span>
+                        <TimeInput
+                          value={timing.end}
+                          onChange={(v) => updatePeriodTiming(i, timing.start, v)}
+                          editable={isEditMode}
+                        />
+                      </span>
+                    </th>
+                  );
+                })}
+              </tr>
+            </thead>
+            <tbody>
             {visibleWeekdays.map((wd) => {
               const dayBlocks = getDayBlocks(wd.day, maxSlots, getSlot, isMergedView);
               const activeSlotsCount = slots.filter((s) => s.weekday === wd.day && s.subjectId).length;
               const multiHourCount = dayBlocks.filter((b) => b.span > 1 && b.subjectId).length;
 
               return (
-                <div
-                  key={wd.day}
-                  className="p-3.5 sm:p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06] space-y-3"
-                >
-                  {/* Day Header */}
-                  <div className="flex items-center justify-between border-b border-white/[0.05] pb-2">
-                    <div className="flex items-center gap-2.5">
-                      <span className="font-extrabold text-white text-sm sm:text-base tracking-tight">
+                <tr key={wd.day} className="border-b border-white/10 last:border-b-0">
+                  <th scope="row" className="sticky left-0 z-10 w-[150px] border-r border-white/10 bg-[#171717] px-3 py-3 text-left align-top">
+                    <div className="flex flex-col items-start gap-1.5">
+                      <span className="font-extrabold text-white text-sm tracking-tight">
                         {wd.name}
                       </span>
-                      <span className="text-[11px] font-mono text-[#8E8E93] bg-white/5 px-2 py-0.5 rounded-md">
+                      <span className="text-[10px] font-mono text-white/50">
                         {activeSlotsCount} class{activeSlotsCount === 1 ? "" : "es"}
                       </span>
                       {multiHourCount > 0 && (
-                        <span className="text-[10px] font-mono text-purple-300 bg-purple-500/15 border border-purple-500/25 px-2 py-0.5 rounded-md">
+                        <span className="text-[9px] font-mono text-purple-300">
                           {multiHourCount} multi-hour
                         </span>
                       )}
                     </div>
 
-                    <button
+                    {isEditMode && <button
                       onClick={() => handleClearDay(wd.day)}
-                      className="flex items-center gap-1 text-[11px] text-[#8E8E93] hover:text-rose-400 transition-colors cursor-pointer"
+                      className="mt-2 flex items-center gap-1 text-[10px] text-white/45 hover:text-rose-400 transition-colors cursor-pointer"
                       title="Clear all classes on this day"
                     >
                       <Trash2 size={12} />
                       <span>Clear Day</span>
-                    </button>
-                  </div>
-
-                  {/* Day Slots Grid: Multi-hour cards span proportionally across periods */}
-                  <div
-                    className="grid gap-2.5"
-                    style={{
-                      gridTemplateColumns: `repeat(${maxSlots}, minmax(0, 1fr))`,
-                    }}
-                  >
+                    </button>}
+                  </th>
                     {dayBlocks.map((block) => {
                       const selectedSubj = subjects.find(
                         (s) => String(s._id) === String(block.subjectId)
@@ -1366,21 +1356,22 @@ export default function TimetableTab() {
                       const isMultiHour = block.span > 1;
 
                       return (
-                        <div
+                        <td
                           key={block.id}
-                          style={{
-                            gridColumn: `span ${block.span} / span ${block.span}`,
-                          }}
-                          className={`p-2.5 rounded-2xl border transition-all flex flex-col justify-between relative group overflow-hidden ${
+                          colSpan={block.span}
+                          className="min-w-[132px] border-r border-white/[0.08] p-1.5 align-top last:border-r-0"
+                        >
+                        <div
+                          className={`min-h-[94px] rounded-lg border transition-colors flex flex-col justify-between relative group overflow-hidden p-2 ${
                             selectedSubj
                               ? isLab
-                                ? "bg-purple-950/25 border-purple-500/40 hover:border-purple-500/60 shadow-lg shadow-purple-950/20"
+                                ? "bg-purple-950/25 border-purple-500/35 hover:border-purple-500/60"
                                 : isTutorial
-                                ? "bg-cyan-950/25 border-cyan-500/40 hover:border-cyan-500/60 shadow-lg"
-                                : "bg-white/[0.04] border-white/10 hover:border-white/20 shadow-sm"
+                                ? "bg-cyan-950/20 border-cyan-500/30 hover:border-cyan-500/50"
+                                : "bg-white/[0.035] border-white/10 hover:border-white/20"
                               : isLab
-                              ? "bg-purple-950/15 border-purple-500/30 hover:border-purple-500/50"
-                              : "bg-white/[0.01] border-white/5 border-dashed hover:border-white/15"
+                              ? "bg-purple-950/10 border-purple-500/20"
+                              : "bg-white/[0.015] border-white/[0.06]"
                           } ${isDimmed ? "opacity-25" : "opacity-100"}`}
                         >
                           {/* Top Row: Time Range + Period Badge + Delete */}
@@ -1391,6 +1382,7 @@ export default function TimetableTab() {
                                 onChange={(v) =>
                                   updateSlot(wd.day, block.startSlotIndex, { startTime: v })
                                 }
+                                editable={isEditMode}
                               />
                               <span className="text-white/30 text-[9px]">–</span>
                               <TimeInput
@@ -1398,6 +1390,7 @@ export default function TimetableTab() {
                                 onChange={(v) =>
                                   updateSlot(wd.day, block.endSlotIndex, { endTime: v })
                                 }
+                                editable={isEditMode}
                               />
                             </div>
 
@@ -1424,7 +1417,7 @@ export default function TimetableTab() {
                                 </span>
                               )}
 
-                              {(block.subjectId || isMultiHour) && (
+                              {isEditMode && (block.subjectId || isMultiHour) && (
                                 <button
                                   type="button"
                                   onClick={() => clearBlock(wd.day, block)}
@@ -1484,14 +1477,6 @@ export default function TimetableTab() {
                                 >
                                   {isLab ? "Lab" : isTutorial ? "Tutorial" : "Lecture"}
                                 </span>
-                                <button
-                                  type="button"
-                                  onClick={() => setIsEditMode(true)}
-                                  className="text-white/30 hover:text-white p-0.5 transition-colors cursor-pointer"
-                                  title="Edit slot"
-                                >
-                                  <Edit2 size={10} />
-                                </button>
                               </div>
                             </div>
                           ) : (
@@ -1648,13 +1633,14 @@ export default function TimetableTab() {
                             </>
                           )}
                         </div>
+                        </td>
                       );
                     })}
-                  </div>
-                </div>
+                </tr>
               );
             })}
-          </div>
+            </tbody>
+          </table>
         </div>
       </div>
       )}
@@ -1707,6 +1693,39 @@ export default function TimetableTab() {
           isOpen={isParserModalOpen}
           onClose={() => setIsParserModalOpen(false)}
           subjects={subjects}
+          onImportSuccess={async () => {
+            try {
+              const [refreshedSubjects, ttData] = await Promise.all([
+                attendanceApi.getSubjects(),
+                attendanceApi.getTimetable(),
+              ]);
+              setSubjects(refreshedSubjects);
+              const loadedSlots: TimetableSlot[] = ttData.slots.map((s) => ({
+                _id: s._id,
+                weekday: s.weekday,
+                slotIndex: s.slotIndex,
+                startTime: s.startTime,
+                endTime: s.endTime,
+                room: s.room,
+                slotType: s.slotType || "lecture",
+                blockId: (s as any).blockId || null,
+                blockSpan: (s as any).blockSpan || 1,
+                subjectId:
+                  typeof s.subjectId === "object" && s.subjectId !== null
+                    ? (s.subjectId as any)._id
+                    : s.subjectId || null,
+              }));
+              setSlots(loadedSlots);
+
+              const highestSlotInDb = loadedSlots.reduce((m, s) => Math.max(m, s.slotIndex + 1), 0);
+              const resolvedMax = Math.max(ttData.maxSlots || 8, highestSlotInDb, 8);
+              setMaxSlots(resolvedMax);
+
+              showToast("Timetable routine applied and synced successfully!");
+            } catch (err) {
+              console.error("Failed to reload imported routine:", err);
+            }
+          }}
           onApplySlots={async (newSlots, replaceExisting = true) => {
             try {
               const refreshedSubjects = await attendanceApi.getSubjects();

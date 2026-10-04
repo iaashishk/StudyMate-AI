@@ -9,6 +9,8 @@ import {
   saveTimetable,
   clearTimetable,
   parseAiTimetable,
+  applySmartImport,
+  undoSmartImport,
   getDaySessions,
   markAttendance,
   bulkMarkDayPresent,
@@ -52,11 +54,14 @@ router.post("/subjects", createAttendanceSubject);
 router.patch("/subjects/:id", updateAttendanceSubject);
 router.delete("/subjects/:id", deleteAttendanceSubject);
 
-// Timetable
+// Timetable & Smart Document Import (PRD Section 4 & 9)
 router.get("/timetable", getTimetable);
 router.put("/timetable", saveTimetable);
 router.delete("/timetable", clearTimetable);
 router.post("/timetable/parse-ai", parseAiTimetable);
+router.post("/import/parse", parseAiTimetable);
+router.post("/import/apply", applySmartImport);
+router.post("/import/undo", undoSmartImport);
 
 // Day Sessions & Marking
 router.get("/day/:date", getDaySessions);

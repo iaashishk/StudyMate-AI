@@ -21,6 +21,7 @@ import {
 import { useAuth } from "../context/AuthContext";
 import FocusPlayerModal from "./FocusPlayerModal";
 import InteractiveTutorialModal from "./InteractiveTutorialModal";
+import StudyMateHelpBot from "./StudyMateHelpBot";
 import { LogoIcon } from "./Logo";
 
 const navItems = [
@@ -477,6 +478,9 @@ export default function AppLayout() {
         isOpen={tutorialOpen}
         onClose={() => setTutorialOpen(false)}
       />
+
+      {/* Floating Panda Guide (Homescreen Only) */}
+      {location.pathname === "/" && <StudyMateHelpBot />}
     </div>
   );
 }

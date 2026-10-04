@@ -174,7 +174,7 @@ export default function BunkPlannerTab() {
       )}
 
       {/* Top Banner: Semester Forecast (FR-K5) */}
-      <div className="p-6 rounded-3xl bg-gradient-to-br from-[#141414] to-[#1A1A1E] border border-white/[0.08] shadow-xl space-y-4">
+      <div className="p-4 sm:p-6 rounded-3xl bg-gradient-to-br from-[#141414] to-[#1A1A1E] border border-white/[0.08] shadow-xl space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
@@ -194,7 +194,7 @@ export default function BunkPlannerTab() {
         </div>
 
         {/* Forecast Table */}
-        <div className="overflow-x-auto">
+        <div className="hidden overflow-x-auto lg:block">
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="border-b border-white/[0.07] text-[#8E8E93]">
@@ -246,6 +246,68 @@ export default function BunkPlannerTab() {
               ))}
             </tbody>
           </table>
+        </div>
+
+        <div className="space-y-3 lg:hidden">
+          {forecasts.map((f) => (
+            <article
+              key={f._id}
+              className="rounded-2xl border border-white/[0.07] bg-white/[0.025] p-3.5"
+            >
+              <div className="flex min-w-0 items-start justify-between gap-3">
+                <div className="flex min-w-0 items-start gap-2">
+                  <span
+                    className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
+                    style={{ backgroundColor: f.color }}
+                  />
+                  <div className="min-w-0">
+                    <h4 className="break-words text-sm font-semibold leading-snug text-white">
+                      {f.name}
+                    </h4>
+                    {f.code && <p className="mt-0.5 text-[10px] text-white/45">{f.code}</p>}
+                  </div>
+                </div>
+                <span
+                  className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-bold ${
+                    f.isRecoverable
+                      ? "bg-emerald-500/15 text-emerald-300"
+                      : "bg-rose-500/15 text-rose-300"
+                  }`}
+                >
+                  {f.isRecoverable ? "Recoverable" : "At risk"}
+                </span>
+              </div>
+
+              <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-3 border-t border-white/[0.06] pt-3">
+                <div>
+                  <p className="text-[10px] text-white/45">Attendance</p>
+                  <p className="mt-0.5 text-xs font-mono text-white">
+                    {f.attended}/{f.conducted} · {f.conducted > 0
+                      ? ((f.attended / f.conducted) * 100).toFixed(1)
+                      : "0.0"}%
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-white/45">Required</p>
+                  <p className="mt-0.5 text-xs font-mono text-white">{f.minPercent}%</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-white/45">Classes remaining</p>
+                  <p className="mt-0.5 text-xs font-mono text-white">{f.remainingSessions}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-white/45">Safe skips</p>
+                  <p className="mt-0.5 text-xs font-mono font-bold text-emerald-300">
+                    {f.maxBunksLeft}
+                  </p>
+                </div>
+                <div className="col-span-2">
+                  <p className="text-[10px] text-white/45">Minimum classes to attend</p>
+                  <p className="mt-0.5 text-xs font-mono text-white">{f.minimumToAttend}</p>
+                </div>
+              </div>
+            </article>
+          ))}
         </div>
       </div>
 

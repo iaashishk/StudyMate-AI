@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { X, BookOpen, User, Hash, Percent, Award, AlertCircle } from "lucide-react";
+import { X, BookOpen, User, Hash, Percent, Award, AlertCircle, Layers } from "lucide-react";
 import { AttendanceSubject } from "../../types/attendance";
 import { attendanceApi } from "../../lib/attendance-api";
 
@@ -166,8 +166,8 @@ export default function AddSubjectModal({
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-white/80 mb-1.5">
-                BName (Short / Acronym)
+              <label className="block text-xs font-semibold text-white/80 mb-1.5 flex items-center gap-1.5">
+                <Layers size={13} /> Short name (for timetable slots)
               </label>
               <input
                 type="text"

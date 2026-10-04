@@ -1,68 +1,69 @@
-# StudyMate AI 📚 (v2.1)
+# StudyMate AI 📚 (v2.2)
 
 > A production-grade, AI-powered academic curriculum, attendance, lab code, and study planner for university students — engineered with React 19, TypeScript, Node.js, Express, MongoDB Atlas, and a pedagogical prerequisite scheduling engine.
 
 **Live Application:** [study-mate-ai-wheat-seven.vercel.app](https://study-mate-ai-wheat-seven.vercel.app/) | **API Service:** [studymate-ai-me50.onrender.com](https://studymate-ai-me50.onrender.com)
 
-![StudyMate AI v2.1](https://img.shields.io/badge/Version-2.1.0--Release-blue?style=flat-square) ![React](https://img.shields.io/badge/React-19-blue?logo=react&style=flat-square) ![TypeScript](https://img.shields.io/badge/TypeScript-Strict-blue?logo=typescript&style=flat-square) ![Node.js](https://img.shields.io/badge/Node.js-Express_5-green?logo=nodedotjs&style=flat-square) ![MongoDB](https://img.shields.io/badge/MongoDB-Atlas_Mongoose_9-green?logo=mongodb&style=flat-square) ![Vite](https://img.shields.io/badge/Vite-6.4-purple?logo=vite&style=flat-square)
+![StudyMate AI v2.2](https://img.shields.io/badge/Version-2.2.0--Release-blue?style=flat-square) ![React](https://img.shields.io/badge/React-19-blue?logo=react&style=flat-square) ![TypeScript](https://img.shields.io/badge/TypeScript-Strict-blue?logo=typescript&style=flat-square) ![Node.js](https://img.shields.io/badge/Node.js-Express_5-green?logo=nodedotjs&style=flat-square) ![MongoDB](https://img.shields.io/badge/MongoDB-Atlas_Mongoose_9-green?logo=mongodb&style=flat-square) ![Vite](https://img.shields.io/badge/Vite-6.4-purple?logo=vite&style=flat-square)
 
 ---
 
-## 🚀 What's New in v2.1 Update
+## 🚀 What's New in v2.2 Update
 
-StudyMate AI v2.1 introduces major academic companion workspaces to help university students manage assignments, lab practicals, attendance, and exam prep in one unified dashboard:
+StudyMate AI v2.2 introduces an end-to-end multimodal timetable scanner, atomic smart import with 1-click undo, mobile-first responsive polish, and an in-app companion guide:
+
+### 1. 📅 Multimodal Smart Timetable Scanner (`/attendance`)
+- **Direct Camera & PDF Parsing**: Upload routine photos (JPG, PNG) or circular PDFs directly. The vision pipeline reads periods, courses, faculty, and room numbers.
+- **Batch Split Detection**: Automatically identifies practical lab batch splits (*Batch 1/2* vs *Batch 2/2*) and multi-hour laboratory blocks (up to 4-hour lab sessions).
+- **Type-Aware Vocabulary Snapping**: Strict lab-versus-lecture normalization ensures lab practicals (e.g. *DBMS Lab*, *Java Lab*) are never conflated with lecture courses.
+- **Atomic Import & 1-Click Undo**: Review detected courses and confidence ratings before saving. Undo any import batch atomically with a single tap.
+
+### 2. ⏳ Mid-Semester Attendance Backfill Suite
+- **Bulk Past Records Filling**: If joining mid-semester (e.g. classes started in August and it is now October), backfill your past attendance across date ranges.
+- **Day-by-Day Preview & Undo**: Preview affected sessions before committing, with 1-click batch undo support to revert any backfill batch cleanly.
+- **Opening Attendance Balances**: Set past attended and conducted class numbers on individual subjects without tedious manual logging.
+
+### 3. 📱 Mobile-First Attendance & Layout Polish
+- **Zero-Overflow Timetable View**: Responsive date pickers, subject filters, and a single-row swipeable weekday selector pill bar (`All Week`, `Mon`, `Tue`, `Wed`, `Thu`, `Fri`).
+- **Clean Today Tab Actions**: Date navigation and action buttons (*Mark All Present*, *Holiday*, *Extra Class*) consolidated into a unified, non-congested toolbar.
+- **Compact Subtab Navigation**: Mobile-optimized subtab labels (*Today*, *Brain*, *Subjects*, *Timetable*, *Holidays*, *Bunk Planner*, *Backfill*, *Reports*) with horizontal snap scrolling.
+
+### 4. 🐼 In-App StudyMate Companion Guide
+- **Homescreen Quick Help**: Floating companion button located on the homescreen with 1-tap guidance for navigating any feature.
+- **Contextual In-App Navigation**: Clickable links in answers navigate directly to corresponding modules (*Timetable*, *Study Planner*, *Lab Codes*, *Curriculum Hub*).
+- **Clean Non-Intrusive Design**: Minimalist dark UI styled with the official app symbol, free of distracting artificial filler.
+
+---
+
+## 📚 Core Features & Architecture
 
 ### 1. 📝 Academic Assignments Hub (`/assignments`)
 - **Dictate or Upload**: Enter questions dictated by professors in class or upload assignment sheet PDFs/images.
-- **AI Professor Solutions**: 1-click **"Solve with AI"** generates textbook-grade answers structured with formal definitions, theoretical frameworks, operational mechanics, and high-yield exam takeaways.
+- **Structured Academic Solutions**: Generates textbook-grade answers structured with formal definitions, theoretical frameworks, operational mechanics, and high-yield exam takeaways.
 - **Soft Copy Reader Mode**: Formats answers into clean, read-only documents for exam cramming or copying into register sheets.
-- **Active Recall Self-Test Mode**: Blurs the answers so students can practice recall before revealing solutions.
+- **Active Recall Self-Test Mode**: Blurs answers so students can practice recall before revealing solutions.
 - **"Copy for Register"**: 1-click plain text copy that automatically strips markdown symbols, code wrappers, and asterisks for direct handwriting into physical assignment sheets.
-- **Inline Question Editing & Re-Solving**: Modify question text and marks (2M, 5M, 10M, 16M) anytime, with an instant **"Save & Re-Solve with AI"** action.
-- **Inline Solution Editing**: Fine-tune solutions with personal professor tips or lecture notes.
 
 ### 2. 💻 Practical Lab Codes & Manual Hub (`/lab-codes`)
 - **Multi-Language Support**: Supports `C++`, `C`, `Python`, `Java`, `SQL`, `JavaScript`, and `Bash`.
-- **AI Solution Derivation**: Derives self-contained, compilable code, step-by-step algorithms, sample console inputs, expected outputs, and time/space complexity analysis ($O(\log n)$, $O(n \log n)$, $O(1)$).
+- **Code & Viva Derivations**: Derives self-contained, compilable code, step-by-step algorithms, sample console inputs, expected outputs, and time/space complexity analysis ($O(\log n)$, $O(n \log n)$, $O(1)$).
 - **Oral Viva-Voce Practice Suite**: Generates examination viva questions and answers with an interactive **Viva Quiz Mode** (hidden answers with tap-to-reveal for self-testing).
 - **Lab Manual Record Sheet**: Complete soft copy ready to print or submit for lab manual records.
-- **Experiment Edit & Re-Derive**: Edit experiment numbers, titles, aims, target languages, or teacher prompts, with 1-click **"Save & Re-Derive with AI"**.
 
-### 3. 📅 Smart Attendance & Timetable Manager (`/attendance`)
+### 3. 🎯 75% Attendance Safeguard & Bunk Planner (`/attendance`)
 - **75% Attendance Safeguard**: Live tracking with predictive safety metrics (*"You can safely bunk X more sessions"* or *"You must attend the next Y classes to reach 75%"*).
-- **Weekly Schedule & Quick Toggles**: Mark daily lectures and labs in 1 click across 4 statuses: **Present**, **Absent**, **Bunked**, or **Cancelled**.
-- **Timetable OCR/Document Parser**: Upload a timetable image or PDF to auto-populate weekly slots.
-- **Academic Holiday Calendar Parser**: Upload academic calendar PDFs or images to auto-exclude university holidays and semester breaks.
+- **"Can I Bunk?" Indicator**: Live safety badges on daily sessions showing whether skipping a class keeps attendance above target.
+- **Academic Holiday Tracker**: Auto-excludes university holidays, gazetted off-days, and semester circular breaks.
 
-### 4. ⚡ Dynamic Schedule Synchronization (Day-Off & Revision Sync)
-- **"Take Day Off" Button**: Postpones today's study agenda and shifts the study plan forward seamlessly without losing past completion history.
-- **"Revise Today" Sync**: Instantly switches today's agenda into an active recall review session and synchronizes the plan forward.
-- **Prerequisite Topic Flow Guard**: Guarantees topics within each subject follow a strict pedagogical flow (Unit 1 before Unit 2, related conceptual progression) without disconnected topic jumping.
-
-### 5. 🧠 Dual AI Engine (Gemini 1.5 Flash + Encyclopedic Fallback)
-- **Google Gemini 1.5 Flash Integration**: Optional live API connection via `GEMINI_API_KEY` for dynamic answers to arbitrary university questions.
-- **Deep Offline CS Knowledge Base**: Built-in comprehensive answers for core computer science domains (Java, Python, C++, OOP 4 Pillars, JIT Compiler & JVM Execution Engine, Garbage Collection, DBMS/SQL, Computer Networks, Operating Systems, Data Structures & Algorithms).
-- **Universal Math & Pipeline Formatter**: Renders architectural flow diagrams, system execution pipelines, and mathematical proofs cleanly in Unicode and interactive flow cards without raw unparsed LaTeX.
+### 4. ⚡ Dynamic Schedule Synchronization & Pedagogical Engine (`/plan`)
+- **Cognitive AI Algorithm**: Each pending topic receives a real-time **Pedagogical Priority Score**:
+  $$\text{Priority Score} = \text{Urgency} \times (6 - \text{Confidence}) \times \text{Unit Factor} \times \text{Topic Weight}$$
+- **"Take Day Off"**: Postpones today's study agenda and shifts the study plan forward seamlessly without losing past completion history.
+- **"Revise Today"**: Instantly switches today's agenda into an active recall review session and synchronizes the plan forward.
 
 ---
 
-## Core Features
-
-- 🔐 **JWT Authentication** — Signup, login, secure token refresh with HTTP-only cookies
-- 📚 **Subject & Topic Tracker** — Add subjects with exam dates, topics with confidence ratings (1–5), and estimated study hours
-- 🤖 **Pedagogical AI Scoring Engine** — Generates a personalized daily study plan using:
-  ```
-  Priority Score = Urgency × (6 − Confidence) × Unit Factor × Topic Weight
-  ```
-- 📅 **Day-by-Day Adaptive Plan** — Mark tasks done, missed, or revised; missed tasks auto-reschedule
-- 📊 **Analytics Dashboard** — Completion %, streak tracker, 14-day history chart, subject time breakdown
-- 💡 **AI Insights** — Plain-language explanation of why each topic is prioritized
-- 🎨 **Polished Dark Glassmorphism UI** — Framer Motion page transitions, split-screen auth, skeleton loading, and toast notifications
-- 📱 **Mobile-First Responsive** — Optimized for mobile phones (360px+) and desktop monitors
-
----
-
-## Tech Stack
+## 🛠️ Tech Stack
 
 | Layer | Technology |
 |---|---|
@@ -72,38 +73,24 @@ StudyMate AI v2.1 introduces major academic companion workspaces to help univers
 | **Icons** | Lucide React |
 | **Forms & Validation** | React Hook Form + Zod v3 |
 | **Data Visualization** | Recharts v3 |
-| **Backend API** | Node.js, Express 5 |
+| **Backend API** | Node.js, Express 5 (50MB payload streaming) |
 | **Database** | MongoDB Atlas, Mongoose v9 |
-| **AI Engine** | Google Gemini 1.5 Flash + Built-in Academic Synthesizer Engine |
+| **Multimodal Vision Engine** | Google Gemini Vision (high-availability cascade) + Academic Knowledge Synthesizer |
 | **Document OCR** | Tesseract.js / pdfjs-dist file extractor |
 | **Authentication** | JWT (Access + Refresh tokens with HTTP-only cookies), bcrypt |
 | **Deployment** | Vercel (Frontend SPA) + Render (Backend Web Service) |
 
 ---
 
-## The Cognitive AI Algorithm
-
-Each pending topic receives a real-time **Pedagogical Priority Score**:
-
-$$\text{Priority Score} = \text{Urgency} \times (6 - \text{Confidence}) \times \text{Unit Factor} \times \text{Topic Weight}$$
-
-Where:
-- $\text{Urgency} = \frac{1}{\max(\text{daysUntilExam}, 1)}$ — Closer exams generate higher urgency.
-- $\text{Confidence} = 1 \dots 5$ — Lower student confidence yields a higher priority multiplier ($6 - \text{confidence}$).
-- $\text{Unit Factor} = \frac{1}{\text{unitNumber}}$ — Enforces foundational prerequisite progression (Unit 1 scheduled before Unit 4).
-- $\text{Topic Weight} = \frac{\text{estimatedMinutes}}{\text{totalSubjectMinutes}}$.
-
----
-
-## Project Structure
+## 📁 Project Structure
 
 ```
 StudyMate-AI/
 ├── server/                      # Express 5 API
 │   ├── src/
-│   │   ├── controllers/         # Auth, Subject, Plan, Assignment, LabCode, Attendance
-│   │   ├── models/              # User, Subject, StudyPlan, Assignment, LabCode, Attendance
-│   │   ├── routes/              # RESTful API routes
+│   │   ├── controllers/         # Auth, Subject, Plan, Assignment, LabCode, Attendance, HelpBot
+│   │   ├── models/              # User, Subject, StudyPlan, Assignment, LabCode, Attendance, ImportJob
+│   │   ├── routes/              # RESTful API routes (/attendance, /helpbot, /subjects, /plan, /labs)
 │   │   ├── middlewares/         # JWT auth, express-validator, CORS regex
 │   │   ├── services/
 │   │   │   ├── study-planner.js    # ← Pedagogical AI Engine
@@ -113,35 +100,34 @@ StudyMate-AI/
 └── client/                      # React 19 SPA (Vite)
     ├── src/
     │   ├── pages/               # Lazy-loaded route views
-    │   │   ├── auth/            # Login, Signup (Split-screen)
-    │   │   ├── DashboardPage    # Focus Ring, Daily Agenda, Day-Off / Revise sync
+    │   │   ├── DashboardPage    # Focus Ring, Daily Agenda, Companion Guide
+    │   │   ├── AttendancePage   # Timetable, Calendar, 75% Tracker, Backfill Suite
     │   │   ├── SubjectsPage     # Folder Explorer & Grid views
     │   │   ├── SubjectDetailPage# Curriculum checklist, Vault, Cloud Notes
     │   │   ├── StudyPlanPage    # Day-by-Day schedule & Mountain Roadmap
     │   │   ├── AssignmentsPage  # Academic Assignments Hub & Soft Copy Reader
     │   │   ├── LabCodesPage     # Practical Lab Codes, Derivations & Viva Suite
-    │   │   ├── AttendancePage   # Timetable, Calendar Parser & 75% Tracker
     │   │   ├── NotesPage        # Centralized Cloud Notes Vault
     │   │   ├── InsightsPage     # Pedagogical AI explanations
     │   │   └── AnalyticsPage    # Recharts metrics
     │   ├── components/          # Reusable UI components
-    │   │   ├── AcademicAnswerCard.tsx # Exam answer renderer with TeX & Active Recall
-    │   │   ├── CurriculumFolderTree.tsx # Degree -> Semester -> Subject -> Unit explorer
-    │   │   ├── LearningRoadmap.tsx    # Mountain Expedition Quest Trail
+    │   │   ├── StudyMateHelpBot.tsx # Homescreen Companion Guide
+    │   │   ├── TimetableParserModal.tsx # Multimodal Routine Scanner
+    │   │   ├── AcademicAnswerCard.tsx # Exam answer renderer with TeX
     │   │   └── InlineDocViewerModal.tsx# On-Site Drive/PDF viewer
     │   ├── context/             # AuthContext, ToastContext, ConfirmContext, ThemeContext
-    │   └── lib/                 # academic-api.ts, attendance-api.ts, file-extractor.ts
+    │   └── lib/                 # academic-api.ts, attendance-api.ts, timetable-parser.ts
     └── package.json
 ```
 
 ---
 
-## Running Locally
+## 🏃 Running Locally
 
 ### Prerequisites
 - Node.js 18+
 - MongoDB instance (Local or [MongoDB Atlas](https://cloud.mongodb.com))
-- *(Optional)* Free Google Gemini API Key from [Google AI Studio](https://aistudio.google.com/app/apikey)
+- *(Optional)* Google Gemini API Key from [Google AI Studio](https://aistudio.google.com/app/apikey)
 
 ### 1. Clone & Setup
 ```bash
@@ -158,7 +144,7 @@ ACCESS_TOKEN_SECRET=your_access_token_secret_here
 REFRESH_TOKEN_SECRET=your_refresh_token_secret_here
 CORS_ORIGIN=http://localhost:5173,http://127.0.0.1:5173
 
-# Optional: Add your free Google Gemini API Key for live AI answers
+# Optional: Add your Google Gemini API Key for live multimodal timetable vision & answers
 GEMINI_API_KEY=your_gemini_api_key_here
 ```
 
@@ -180,7 +166,7 @@ npm run dev
 
 ---
 
-## Deployment
+## 🚢 Deployment
 
 | Service | Platform | Root Directory | Configuration |
 |---|---|---|---|
@@ -190,7 +176,7 @@ npm run dev
 
 ---
 
-## Author
+## 👨‍💻 Author
 
 **Aashish Kumar** — MCA Student (AI/ML)  
 [GitHub](https://github.com/iaashishk) • [LinkedIn](https://www.linkedin.com/in/aashish-k-b53778261/)
