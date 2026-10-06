@@ -125,8 +125,8 @@ export default function DashboardPage() {
     fetchData();
   }, [fetchData]);
 
-  const fetchAttendance = useCallback(async () => {
-    setAttendanceLoading(true);
+  const fetchAttendance = useCallback(async (silent = false) => {
+    if (!silent) setAttendanceLoading(true);
     setAttendanceError("");
     try {
       setAttendanceDay(await attendanceApi.getDaySessions(todayLocalCivil()));
@@ -134,7 +134,7 @@ export default function DashboardPage() {
       console.error("Failed to load today's attendance", err);
       setAttendanceError("Could not load today's class attendance.");
     } finally {
-      setAttendanceLoading(false);
+      if (!silent) setAttendanceLoading(false);
     }
   }, []);
 
@@ -146,7 +146,10 @@ export default function DashboardPage() {
     if (!attendanceDay) return;
     const sessions = indices.map((index) => attendanceDay.sessions[index]);
     const isAlreadySelected = sessions.every((session) => session.status === status);
+    const previousSessions = attendanceDay.sessions;
     setUpdatingAttendance(key);
+
+    // 1. Instant 0ms Optimistic Update
     setAttendanceDay({
       ...attendanceDay,
       sessions: attendanceDay.sessions.map((session, index) =>
@@ -156,30 +159,55 @@ export default function DashboardPage() {
 
     try {
       if (isAlreadySelected) {
-        const entries = sessions.filter((session) => session.subjectId);
+        let entries = sessions.filter((session) => session.subjectId);
+        // Fallback if entryId is not yet available in current state
         if (entries.some((session) => !session.entryId)) {
-          throw new Error("Saved attendance entry is missing its identifier.");
+          const fresh = await attendanceApi.getDaySessions(todayLocalCivil());
+          entries = indices
+            .map((index) => fresh.sessions[index])
+            .filter((s) => s && s.subjectId && s.entryId);
         }
-        await Promise.all(entries.map((session) => attendanceApi.deleteEntry(session.entryId!)));
+        if (entries.length > 0) {
+          await Promise.all(entries.map((session) => attendanceApi.deleteEntry(session.entryId!)));
+        }
       } else {
-        await Promise.all(
-          indices.map((index) => {
+        const results = await Promise.all(
+          indices.map(async (index) => {
             const session = attendanceDay.sessions[index];
-            if (!session.subjectId) return Promise.resolve();
-            return attendanceApi.markAttendance({
+            if (!session.subjectId) return null;
+            const res = (await attendanceApi.markAttendance({
               date: attendanceDay.date,
               slotId: session.slotId,
               subjectId: session.subjectId,
               status,
-            });
+            })) as { _id?: string } | undefined;
+            return { index, entryId: res?._id };
           })
         );
+
+        // Optimistically attach returned entryIds so toggling off works immediately
+        setAttendanceDay((prev) => {
+          if (!prev) return prev;
+          const nextSessions = [...prev.sessions];
+          for (const item of results) {
+            if (item && item.entryId && nextSessions[item.index]) {
+              nextSessions[item.index] = {
+                ...nextSessions[item.index],
+                entryId: item.entryId,
+              };
+            }
+          }
+          return { ...prev, sessions: nextSessions };
+        });
       }
-      await fetchAttendance();
+      // 2. Silent background sync (no loading skeleton flash)
+      await fetchAttendance(true);
     } catch (err) {
       console.error("Failed to update today's class attendance", err);
-      await fetchAttendance();
+      // Revert optimistic update on failure
+      setAttendanceDay((prev) => (prev ? { ...prev, sessions: previousSessions } : prev));
       setAttendanceError("Attendance update failed. Please try again.");
+      await fetchAttendance(true);
     } finally {
       setUpdatingAttendance(null);
     }
@@ -470,7 +498,7 @@ export default function DashboardPage() {
         ) : attendanceError ? (
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-rose-500/20 bg-rose-500/[0.06] p-3 text-xs text-rose-200">
             <span>{attendanceError}</span>
-            <button onClick={fetchAttendance} className="font-semibold text-white underline">Retry</button>
+            <button onClick={() => fetchAttendance()} className="font-semibold text-white underline">Retry</button>
           </div>
         ) : !attendanceDay?.sessions.length ? (
           <p className="rounded-xl bg-white/[0.025] px-3 py-4 text-center text-xs text-white/55">
@@ -520,11 +548,13 @@ export default function DashboardPage() {
                       ] as const).map(([value, label, selectedClass]) => (
                         <button
                           key={value}
-                          disabled={busy || !first.subjectId}
+                          disabled={!first.subjectId || busy}
                           onClick={() => handleAttendanceMark(group.indices, value, group.key)}
                           aria-pressed={status === value}
                           title={status === value ? "Tap again to clear this mark" : `Mark ${label.toLowerCase()}`}
-                          className={`rounded-lg border px-2.5 py-2 text-[10px] font-semibold transition-colors disabled:opacity-40 sm:py-1.5 ${
+                          className={`rounded-lg border px-2.5 py-2 text-[10px] font-semibold transition-all sm:py-1.5 ${
+                            busy ? "pointer-events-none opacity-90" : !first.subjectId ? "opacity-40 cursor-not-allowed" : ""
+                          } ${
                             status === value
                               ? selectedClass
                               : "border-white/[0.07] bg-white/[0.03] text-white/55 hover:text-white"

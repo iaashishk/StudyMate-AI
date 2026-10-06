@@ -103,15 +103,15 @@ export default function TodayTab({
     }, 4500);
   };
 
-  const loadDay = useCallback(async (date: string) => {
-    setIsLoading(true);
+  const loadDay = useCallback(async (date: string, silent = false) => {
+    if (!silent) setIsLoading(true);
     try {
       const res = await attendanceApi.getDaySessions(date);
       setData(res);
     } catch (err) {
       console.error("Failed to load day attendance", err);
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   }, []);
 
@@ -139,6 +139,7 @@ export default function TodayTab({
     if (!session || !session.subjectId) return;
 
     const previousStatus = session.status;
+    const previousEntryId = session.entryId;
     const subjectName = session.subject?.name || "Session";
 
     // 1. Optimistic Update (Immediate UI reaction)
@@ -164,17 +165,32 @@ export default function TodayTab({
 
     // 2. Background Sync
     try {
-      await attendanceApi.markAttendance({
+      const res = (await attendanceApi.markAttendance({
         date: currentDate,
         slotId: session.slotId,
         subjectId: session.subjectId,
         status,
-      });
+      })) as { _id?: string } | undefined;
+
+      const newEntryId = res?._id;
+      if (newEntryId) {
+        setData((prev) => {
+          if (!prev) return prev;
+          const nextSessions = [...prev.sessions];
+          if (nextSessions[sessionIndex]) {
+            nextSessions[sessionIndex] = {
+              ...nextSessions[sessionIndex],
+              entryId: newEntryId,
+            };
+          }
+          return { ...prev, sessions: nextSessions };
+        });
+      }
     } catch (err) {
       console.error("Mark failed, rolling back", err);
       // Revert optimistic update on error
       const reverted = [...data.sessions];
-      reverted[sessionIndex] = { ...session, status: previousStatus };
+      reverted[sessionIndex] = { ...session, status: previousStatus, entryId: previousEntryId };
       setData({ ...data, sessions: reverted });
       showUndoToast("Failed to save mark. Changes reverted.");
     }
@@ -189,6 +205,7 @@ export default function TodayTab({
     if (targetSessions.length === 0) return;
 
     const subjectName = targetSessions[0].session.subject?.name || "Block";
+    const previousSessions = [...data.sessions];
 
     // 1. Optimistic Update
     const updatedSessions = [...data.sessions];
@@ -211,19 +228,34 @@ export default function TodayTab({
 
     // 2. Background Sync
     try {
-      await Promise.all(
-        targetSessions.map(({ session }) =>
-          attendanceApi.markAttendance({
+      const results = await Promise.all(
+        targetSessions.map(async ({ session, index }) => {
+          const res = (await attendanceApi.markAttendance({
             date: currentDate,
             slotId: session.slotId,
             subjectId: session.subjectId!,
             status,
-          })
-        )
+          })) as { _id?: string } | undefined;
+          return { index, entryId: res?._id };
+        })
       );
+
+      setData((prev) => {
+        if (!prev) return prev;
+        const nextSessions = [...prev.sessions];
+        for (const item of results) {
+          if (item && item.entryId && nextSessions[item.index]) {
+            nextSessions[item.index] = {
+              ...nextSessions[item.index],
+              entryId: item.entryId,
+            };
+          }
+        }
+        return { ...prev, sessions: nextSessions };
+      });
     } catch (err) {
       console.error("Batch mark failed, rolling back", err);
-      loadDay(currentDate);
+      setData((prev) => (prev ? { ...prev, sessions: previousSessions } : prev));
       showUndoToast("Failed to save block marks. Reverting...");
     }
   };
@@ -235,13 +267,9 @@ export default function TodayTab({
       .filter(({ session }) => session?.subjectId);
     if (targetSessions.length === 0) return;
 
-    const entries = targetSessions.filter(({ session }) => session.entryId);
-    if (entries.length !== targetSessions.length) {
-      await loadDay(currentDate);
-      showUndoToast("Could not clear this mark. Refresh and try again.");
-      return;
-    }
+    const previousSessions = [...data.sessions];
 
+    // 1. Optimistic Update: immediately clear status and entryId
     const updatedSessions = [...data.sessions];
     for (const { index, session } of targetSessions) {
       updatedSessions[index] = { ...session, status: null, entryId: null };
@@ -253,13 +281,26 @@ export default function TodayTab({
     });
 
     try {
-      await Promise.all(entries.map(({ session }) => attendanceApi.deleteEntry(session.entryId!)));
+      let entries = targetSessions.filter(({ session }) => session.entryId);
+      // Fallback if entryId was missing (e.g., mark request still in flight)
+      if (entries.length !== targetSessions.length) {
+        const fresh = await attendanceApi.getDaySessions(currentDate);
+        entries = indices
+          .map((index) => ({ index, session: fresh.sessions[index] }))
+          .filter(({ session }) => session?.subjectId && session?.entryId);
+      }
+
+      if (entries.length > 0) {
+        await Promise.all(entries.map(({ session }) => attendanceApi.deleteEntry(session.entryId!)));
+      }
       showUndoToast("Attendance mark cleared");
-      await loadDay(currentDate);
+      // 2. Silent background sync (no table unmount / loading spinner)
+      await loadDay(currentDate, true);
     } catch (err) {
       console.error("Unmark attendance failed", err);
+      setData((prev) => (prev ? { ...prev, sessions: previousSessions } : prev));
       showUndoToast("Could not clear the mark. Changes restored.");
-      await loadDay(currentDate);
+      await loadDay(currentDate, true);
     }
   };
 
@@ -298,18 +339,28 @@ export default function TodayTab({
 
     try {
       if (previousStatus) {
-        await attendanceApi.markAttendance({
+        const res = (await attendanceApi.markAttendance({
           date: currentDate,
           slotId: session.slotId,
           subjectId: session.subjectId!,
           status: previousStatus,
-        });
+        })) as { _id?: string } | undefined;
+        if (res?._id) {
+          setData((prev) => {
+            if (!prev) return prev;
+            const next = [...prev.sessions];
+            if (next[sessionIndex]) next[sessionIndex] = { ...next[sessionIndex], entryId: res._id };
+            return { ...prev, sessions: next };
+          });
+        }
       } else if (session.entryId) {
         await attendanceApi.deleteEntry(session.entryId);
       }
       showUndoToast(`Reverted ${subjectName} to ${previousStatus || "Unmarked"}`);
+      await loadDay(currentDate, true);
     } catch (err) {
       console.error("Undo failed", err);
+      await loadDay(currentDate, true);
     }
   };
 
@@ -319,7 +370,7 @@ export default function TodayTab({
     try {
       const res = await attendanceApi.bulkMarkDayPresent(currentDate);
       showUndoToast(`All ${res.count} sessions marked Present!`);
-      await loadDay(currentDate);
+      await loadDay(currentDate, true);
     } catch (err) {
       console.error("Bulk present failed", err);
     } finally {
@@ -365,7 +416,7 @@ export default function TodayTab({
         showUndoToast(`Marked ${currentDate} as "${label}"`);
       }
 
-      await loadDay(currentDate);
+      await loadDay(currentDate, true);
     } catch (err) {
       console.error("Holiday mark failed", err);
       showUndoToast("Failed to mark holiday.");
@@ -381,7 +432,7 @@ export default function TodayTab({
       await attendanceApi.clearDayMarks(currentDate);
       showUndoToast(`Attendance marks cleared for ${currentDate}`);
       setShowClearConfirm(false);
-      await loadDay(currentDate);
+      await loadDay(currentDate, true);
     } catch (err) {
       console.error("Clear marks failed", err);
       showUndoToast("Failed to clear marks.");
@@ -936,7 +987,7 @@ export default function TodayTab({
           onClose={() => setIsExtraModalOpen(false)}
           onAdded={() => {
             setIsExtraModalOpen(false);
-            loadDay(currentDate);
+            loadDay(currentDate, true);
             showUndoToast("Extra session added");
           }}
         />
